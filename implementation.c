@@ -553,6 +553,16 @@ int __myfs_utimens_implem(void *fsptr, size_t fssize, int *errnoptr,
 */
 int __myfs_statfs_implem(void *fsptr, size_t fssize, int *errnoptr,
                          struct statvfs* stbuf) {
-  /* STUB */
-  return -1;
+	fshead *fsh;
+	
+	if(fsh=fsinit(fsptr,fssize)==NULL){
+		*errnoptr=ENOENT;
+		return -1;
+	}
+	stbuf->f_bsize=BLKSZ;
+	stbuf->f_blocks=fsh->size;
+	stbuf->f_bfree=fsh->free;
+	stbuf->f_bavail=fsh->free;
+	stbuf->f_namemax=NAMELEN;
+	return 0;
 }
