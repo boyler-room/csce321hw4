@@ -1,3 +1,29 @@
+/*
+	Filesystem structure: [ node blocks | file blocks ]
+		Node blocks: [ fs header | node | ... ]
+		File blocks can be: file data, blocks with additional block offsets, directory file blocks
+		Directories are stored as regular files, but hold the flag S_IFDIR instead of S_IFREG in their node.mode
+	Types:
+		offset: byte offset from start of filesystem, use O2P and P2O to convert between them and pointers
+		blkset: offset from start of filesystem in blocks, as with offset use NULLOFF to represent invalid offsets
+		sz_blk: size in blocks
+		nodei: index into node table, NONODE represents an invalid/null node
+		fsheader: filesystem global header, should always be at fsptr
+		node: file node entry, file metadata and block offsets to the first BLOCKS_NODE data blocks, and to a block 			with additional offsets
+		offblock: block with additional block offsets to data
+		dir: dir file block, WIP, gaps in file list should be closed when created
+		direntry: file entry in dir, contains name and node index, WIP
+	Helper functions:
+		fsinit() - check if the filesystem has been initialized, and do so if not
+		blkalloc() - allocate the first count or fewer blocks, putting the offsets in buf, returns # blocks allocated
+		blkfree() - free up to count blocks from the offsets in buf
+	Debug functions:
+		printfs() - print global fs data
+		printfree() - list free regions
+		printnodetbl() - print node table entries
+		printdirtree() - print directory structure
+*/
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -34,8 +60,8 @@ typedef struct{
 	direntry files[BLKSZ/sizeof(direntry)];
 } dir;
 typedef struct{
-	blkset blocks[BLKSZ-sizeof(offset)];
 	blkset next;
+	blkset blocks[BLKSZ-sizeof(offset)];
 } offblock;
 typedef struct{
 	mode_t mode;
@@ -272,6 +298,7 @@ void fsinit(void *fsptr, size_t fssize)
 	fshead->ntsize=(BLOCKS_FILE*(1+BLKSZ/sizeof(node))+fssize/BLKSZ)/(1+BLOCKS_FILE*BLKSZ/sizeof(node));
 	//(1+BLKSZ/sizeof(node)+fssize/BLKSZ)/(1+BLKSZ/sizeof(node));
 	fshead->nodetbl=sizeof(node);
+	fshead->nfree=BLKSZ*fshead->ntsize/sizeof(node);
 	fshead->freelist=fshead->ntsize;
 	fshead->free=fssize/BLKSZ-fshead->ntsize;
 	
