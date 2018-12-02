@@ -277,6 +277,12 @@ nodei path2node(void *fsptr, char* path)//find node corresponding to path
 	return NONODE;
 }
 
+nodei pathparent(void *fsptr, char* path)//find node of parent directory
+{
+	fsheader *fshead=(fsheader*)fsptr;
+	return NONODE;
+}
+
 void fsinit(void *fsptr, size_t fssize)
 {
 	fsheader *fshead=fsptr;
@@ -329,15 +335,23 @@ int __myfs_getattr_implem(void *fsptr, size_t fssize, int *errnoptr,
                           uid_t uid, gid_t gid,
                           const char *path, struct stat *stbuf) {
 	fsheader *fshead=fsptr;
-	nodei fnode;
+	nodei fnode; node *file;
 	
 	fsinit(fsptr,fssize);
 	if((fnode=path2node(fsptr,path))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}
-  /* STUB */
-  return -1;
+	}file=(node*)O2P(fshead->nodetbl)[fnode];
+	
+	stbuf->st_uid=uid;
+	stbuf->st_gid=gid;
+	stbuf->st_mode=file->mode;
+	stbuf->st_size=file->size;
+	stbuf->st_nlink=file->nlinks;
+	stbuf->st_atim=file->atime;
+	stbuf->st_mtim=file->mtime;
+	stbuf->st_ctim=file->ctime;
+	return 0;
 }
 
 /* Implements an emulation of the readdir system call on the filesystem 
@@ -379,15 +393,33 @@ int __myfs_getattr_implem(void *fsptr, size_t fssize, int *errnoptr,
 int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
                           const char *path, char ***namesptr) {
 	fsheader *fshead=fsptr;
-	nodei fnode;
+	nodei fnode; node *dir;
+	char **namelist
+	size_t count;
 	
 	fsinit(fsptr,fssize);
 	if((fnode=path2node(fsptr,path))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
+	}dir=(node*)O2P(fshead->nodetbl)[fnode];
+	count=dir->size/sizeof(direntry);
+	if((namelist=malloc(count*sizeof(char*)))==NULL){
+		*errnoptr=EINVAL;
+		return -1;
+	}while(){//iterate dir blocks
+		while(){//iterate block entries
+			if() break;//null entry
+			//get entry
+			namelen=strlen()
+			if((namelist[count++]=malloc(namelen))==NULL){
+				*errnoptr=EINVAL;
+				free(namelist);
+				return -1;
+			}
+		}
 	}
-  /* STUB */
-  return -1;
+	*namesptr=namelist;
+	return count;
 }
 
 /* Implements an emulation of the mknod system call for regular files
@@ -411,6 +443,10 @@ int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	fsheader *fshead=fsptr;
 	
 	fsinit(fsptr,fssize);
+	//get/verify parent dir
+	//new node
+	//init attrs
+	//link node to parent dir
   /* STUB */
   return -1;
 }
@@ -436,6 +472,9 @@ int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr, const char *
 		*errnoptr=ENOENT;
 		return -1;
 	}
+	//check if file?
+	//unlink node/null+shift dir entry
+	//if 0 links, free file data
   /* STUB */
   return -1;
 }
@@ -464,6 +503,10 @@ int __myfs_rmdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 		*errnoptr=ENOENT;
 		return -1;
 	}
+	//check if dir
+	//check dir contents, fail if not empty
+	//unlink node from parent
+	//if 0 links, free file data
   /* STUB */
   return -1;
 }
@@ -484,6 +527,11 @@ int __myfs_mkdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	fsheader *fshead=fsptr;
 	
 	fsinit(fsptr,fssize);
+	//verify parent dir
+	//new node
+	//init attrs
+	//link to parent dir
+	//allocate/init dirfile
   /* STUB */
   return -1;
 }
@@ -509,6 +557,11 @@ int __myfs_rename_implem(void *fsptr, size_t fssize, int *errnoptr,
 	fsheader *fshead=fsptr;
 	
 	fsinit(fsptr,fssize);
+	//get/verify parentfrom, parentto, filefrom
+	//if same parents, change name
+	//else
+	//link node to parentto
+	//unlink from parentfrom
   /* STUB */
   return -1;
 }
@@ -539,6 +592,11 @@ int __myfs_truncate_implem(void *fsptr, size_t fssize, int *errnoptr,
 		*errnoptr=ENOENT;
 		return -1;
 	}
+	//if same (#blocks) update bytesize
+	//elif bigger, check possible
+		//alloc new blocks, zero out
+	//elif smaller
+		//free blocks from end
   /* STUB */
   return -1;
 }
@@ -578,6 +636,7 @@ int __myfs_open_implem(void *fsptr, size_t fssize, int *errnoptr, const char *pa
 		*errnoptr=ENOENT;
 		return -1;
 	}
+	//verify path
   /* STUB */
   return -1;
 }
@@ -607,6 +666,9 @@ int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
 		*errnoptr=ENOENT;
 		return -1;
 	}
+	//check notdir
+	//verify/seek to offset
+	//read up to size bytes to buf
   /* STUB */
   return -1;
 }
@@ -663,6 +725,7 @@ int __myfs_utimens_implem(void *fsptr, size_t fssize, int *errnoptr,
 		*errnoptr=ENOENT;
 		return -1;
 	}
+	//change times in node
   /* STUB */
   return -1;
 }

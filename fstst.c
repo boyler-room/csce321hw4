@@ -36,6 +36,8 @@
 #define PAGE_SIZE	4096
 #define FS_PAGES	2
 
+#define FILEMODE	(S_IFREG|0755)
+#define DIRMODE		(S_IFDIR|0755)
 #define CEILDV(A,B)	((A+B-1)/B)
 #define BLKSZ		(size_t)1024
 #define NULLOFF		(offset)0
@@ -99,7 +101,7 @@ nodei newnode(void *fsptr)//find first free node
 	return NONODE;
 }
 
-nodei pathbase(void *fsptr, char* path)//find node of parent directory
+nodei pathparent(void *fsptr, char* path)//find node of parent directory
 {
 	fsheader *fshead=(fsheader*)fsptr;
 	return NONODE;
@@ -127,7 +129,7 @@ int ffree()
 	//null node block offsets
 	return -1;
 }
-int falloc()
+nodei falloc()
 {
 	fsheader *fshead=(fsheader*)fsptr;
 	//check space, incl offset blocks
