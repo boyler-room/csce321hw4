@@ -8,161 +8,90 @@
 #include <errno.h>
 
 #define PAGE_SIZE	4096
-#define FS_PAGES	21
+#define FS_PAGES	2
 
 #define CEILDV(A,B)	((A+B-1)/B)
-#define BLKSZ		(sz_blk)1024
-#define NULLOFF		(size_t)0
-#define O2P(off)	(void*)(off+fsptr)
-#define P2O(ptr)	(offset)(ptr-fsptr)
-#define	FILES_DIR	4
-#define	BLOCKS_NODE	5//such that sizeof(node) is 16 words
-#define NAMELEN		256
+#define BLKSZ		(size_t)1024
+#define NULLOFF		(offset)0
+#define NONODE		(nodei)-1
+#define O2P(off)	(void*)((off)+fsptr)
+#define P2O(ptr)	(offset)((ptr)-fsptr)
+#define	FILES_DIR	4//average files per dir?
+#define BLOCKS_FILE	4//average blocks per file
+#define	BLOCKS_NODE	5//#block offsets in node; such that sizeof(node) is 16 words
+#define NAMELEN		(256-sizeof(nodei))
 
 typedef size_t offset;
+typedef size_t blkset;
 typedef size_t sz_blk;
 typedef ssize_t nodei;
-typedef struct node node;
-typedef struct fsheader fsheader;
-typedef struct freeblk freeblk;
-typedef struct dirfile dirfile;
 
-//use signed word for inodes not ino_t, -1 is error condition/null entry
-
-struct node{
+typedef struct{
+	nodei node;
+	char name[NAMELEN];
+} direntry;
+typedef struct{
+	direntry files[BLKSZ/sizeof(direntry)];
+} dir;
+typedef struct{
+	blkset blocks[BLKSZ-sizeof(offset)];
+	blkset next;
+} offblock;
+typedef struct{
 	mode_t mode;
-	nlink_t nlinks;
-	off_t size;
+	size_t nlinks;
+	size_t size;
 	sz_blk nblocks;
 	struct timespec atime;
 	struct timespec mtime;
 	struct timespec ctime;
 	
-	offset blocks[BLOCKS_NODE];
-	offset blocklist;
-};
-struct fsheader{
-	size_t size;
-	sz_blk free;
-	sz_blk ntsize;
-	offset freelist;
-	offset nodetbl;
-};
-struct freeblk{
+	blkset blocks[BLOCKS_NODE];
+	blkset blocklist;
+} node;
+typedef struct{
 	sz_blk size;
-	offset next;
-	offset prev;
-};
-struct dirfile{
-	char name[NAMELEN];
-	nodei node;
-};
+	blkset next;
+} freereg;
+typedef struct{
+	sz_blk size;
+	sz_blk free;
+	size_t nfree;
+	sz_blk ntsize;
+	blkset freelist;
+	offset nodetbl;
+} fsheader;
 
-nodei newnode()
+nodei newnode(void *fsptr)//find first free node
 {
-	//find a free node
-	return -1;
+	
 }
 
-/* Implements an emulation of the stat system call on the filesystem 
-   of size fssize pointed to by fsptr. 
-   
-   If path can be followed and describes a file or directory 
-   that exists and is accessable, the access information is 
-   put into stbuf. 
-
-   On success, 0 is returned. On failure, -1 is returned and 
-   the appropriate error code is put into *errnoptr.
-
-   man 2 stat documents all possible error codes and gives more detail
-   on what fields of stbuf need to be filled in. Essentially, only the
-   following fields need to be supported:
-
-   st_uid      the value passed in argument
-   st_gid      the value passed in argument
-   st_mode     (as fixed values S_IFDIR | 0755 for directories,
-                                S_IFREG | 0755 for files)
-   st_nlink    (as many as there are subdirectories (not files) for directories
-                (including . and ..),
-                1 for files)
-   st_size     (supported only for files, where it is the real file size)
-   st_atim
-   st_mtim
-
-*/
-int __myfs_getattr_implem(void *fsptr, size_t fssize, int *errnoptr, uid_t uid, gid_t gid, const char *path, struct stat *stbuf)
+/*nodei path2node(void *fsptr, char* path)//find node corresponding to path
 {
-	fsinit(fsptr,fssize);
-	//path2node(path);
-	return 0;
+	fsheader *fshead=(fsheader*)fsptr;
+	return NONODE;
 }
 
-/* Implements an emulation of the mknod system call for regular files
-   on the filesystem of size fssize pointed to by fsptr.
-
-   This function is called only for the creation of regular files.
-
-   If a file gets created, it is of size zero and has default
-   ownership and mode bits.
-
-   The call creates the file indicated by path.
-
-   On success, 0 is returned.
-
-   On failure, -1 is returned and *errnoptr is set appropriately.
-
-   The error codes are documented in man 2 mknod.
-
-*/
-int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr,
-                        const char *path) {
-  /* STUB */
-  return -1;
+nodei pathbase(void *fsptr, char* path)//find node of parent directory
+{
+	fsheader *fshead=(fsheader*)fsptr;
+	return NONODE;
 }
 
-
-
-/* Implements an emulation of the rmdir system call on the filesystem 
-   of size fssize pointed to by fsptr. 
-
-   The call deletes the directory indicated by path.
-
-   On success, 0 is returned.
-
-   On failure, -1 is returned and *errnoptr is set appropriately.
-
-   The function call must fail when the directory indicated by path is
-   not empty (if there are files or subdirectories other than . and ..).
-
-   The error codes are documented in man 2 rmdir.
-
-*/
-int __myfs_rmdir_implem(void *fsptr, size_t fssize, int *errnoptr,
-                        const char *path) {
-  /* STUB */
-  return -1;
+void ndlink()
+{
+	fsheader *fshead=(fsheader*)fsptr;
 }
 
-/* Implements an emulation of the mkdir system call on the filesystem 
-   of size fssize pointed to by fsptr. 
-
-   The call creates the directory indicated by path.
-
-   On success, 0 is returned.
-
-   On failure, -1 is returned and *errnoptr is set appropriately.
-
-   The error codes are documented in man 2 mkdir.
-
-*/
-int __myfs_mkdir_implem(void *fsptr, size_t fssize, int *errnoptr,
-                        const char *path) {
-  /* STUB */
-  return -1;
+void ndunlink()
+{
+	fsheader *fshead=(fsheader*)fsptr;
 }
 
 int ffree()
 {
+	fsheader *fshead=(fsheader*)fsptr;
 	//remove directory entry, free dblock if necc
 	//decrement link count
 	//if !zero return
@@ -174,7 +103,8 @@ int ffree()
 }
 int falloc()
 {
-	//check space
+	fsheader *fshead=(fsheader*)fsptr;
+	//check space, incl offset blocks
 	//find a free node
 	//init node info
 	//trawl the freelist
@@ -187,28 +117,127 @@ int falloc()
 }
 int frealloc()
 {
+	fsheader *fshead=(fsheader*)fsptr;
 	//check if expand shink fits in last block of file
 	return -1;
-}
+}*/
 
-void ndlink()
+//multiple block allocation
+int blkalloc(void *fsptr, size_t count, blkset *buf)//return #blocks allocated?
 {
+	fsheader *fshead=fsptr;
+	blkset freeoff=fshead->freelist;
+	freereg *prev=NULL;
+	size_t alloct=0;
+	
+	while(freeoff!=NULLOFF && alloct<count){
+		freereg *fhead=O2P(freeoff*BLKSZ);
+		sz_blk freeblk=0;
+		while(freeblk<(fhead->size) && alloct<count){
+			buf[alloct++]=freeoff+freeblk++;
+		}if(freeblk==(fhead->size)){
+			if(prev!=NULL) prev->next=fhead->next;
+			else fshead->freelist=fhead->next;
+		}else{
+			freeoff+=freeblk;
+			if(prev!=NULL) prev->next=freeoff;
+			else fshead->freelist=freeoff;
+			*(freereg*)O2P(freeoff*BLKSZ)=*fhead;
+			fhead=(freereg*)O2P(freeoff*BLKSZ);
+			fhead->size-=freeblk;
+			prev=fhead;
+		}freeoff=fhead->next;
+	}fshead->free-=alloct;
+	return alloct;
 }
 
-void ndunlink()
+void offsort(blkset *offs, blkset *targ, size_t len)//clean
 {
+	size_t i=0,j=0;
+	blkset *A,*B;
+	
+	if(targ==NULL || len==0) return;
+	if(len==1) *targ=*offs;
+	else if(len==2){
+		blkset tmp=offs[(offs[1]>offs[0])];
+		targ[0]=offs[(offs[1]<offs[0])];
+		targ[1]=tmp;
+	}else{
+		A=(blkset*)malloc(sizeof(blkset)*len/2);
+		offsort(offs,A,len/2);
+		B=(blkset*)malloc(sizeof(blkset)*(len-len/2));
+		offsort(offs+len/2,B,len-len/2);
+		while((i+j)<len){
+			if(j==(len-len/2) || (i<len/2 && A[i]<B[j])){
+				targ[i+j]=A[i++];
+			}else{
+				targ[i+j]=B[j++];
+			}
+		}free(A);
+		free(B);
+	}
+}
+void blkfree(void *fsptr, size_t count, blkset *buf)//clean
+{
+	fsheader *fshead=fsptr;
+	blkset freeoff=fshead->freelist;
+	//end of fs?
+	offsort(buf,buf,count);
+	while(count--){
+		//printf("cycle %ld, freeing block %ld\n",count,*buf);
+		if(*buf!=NULLOFF){
+			freereg *tmp=(freereg*)O2P(*buf*BLKSZ);
+			if(freeoff==NULLOFF){
+				//printf("empty freelist\n");
+				tmp->next=fshead->freelist;
+				fshead->freelist=*buf;
+				tmp->size=1;
+				freeoff=*buf;
+			}else{
+				freereg *fhead=O2P(freeoff*BLKSZ);
+				if(fhead->next==NULLOFF || *buf<fhead->next){
+					if(*buf==freeoff+fhead->size){
+						//printf("free region extension\n");
+						fhead->size++;
+					}else{
+						tmp->size=1;
+						if(*buf<freeoff){
+							//printf("block precedes freelist\n");
+							tmp->next=fshead->freelist;
+							fshead->freelist=*buf;
+						}else{
+							//printf("block between free regions\n");
+							tmp->next=fhead->next;
+							fhead->next=*buf;
+						}fhead=tmp;
+						freeoff=*buf;
+					}if(fhead->next!=NULLOFF && freeoff+fhead->size==fhead->next){
+						//printf("merging free regions\n");
+						freereg *nxt=(freereg*)O2P(fhead->next*BLKSZ);
+						fhead->next=nxt->next;
+						fhead->size+=nxt->size;
+					}
+				}else{
+					//printf("seeking nearest free region\n");
+					freeoff=fhead->next;
+					continue;
+				}
+			}*buf=NULLOFF;
+			fshead->free++;
+			//printf("tmp free region @ %p, block %ld, size %ld, next: %ld\n",tmp,P2O((void*)tmp)/BLKSZ,tmp->size,tmp->next);
+		}//else printf("null block\n");
+		buf++;
+	}
 }
 
-void fblkadd()
-void fblkrem()
-
-offset blkalloc(void *fsptr)
+//single block allocation
+/*offset blkalloc(void *fsptr)
 {
 	fsheader *fsh=(fsheader*)fsptr;
-	freeblk *fhead;
+	freereg *fhead;
 	
 	if(fsh->freelist==NULLOFF) return NULLOFF;
-	fhead=(freeblk*)O2P(fsh->freelist);
+	fhead=(freereg*)O2P(fsh->freelist);
 	//decrement free region size, shift header
 	fsh->freelist=fhead->next;
 	fsh->free--;
@@ -217,12 +246,12 @@ offset blkalloc(void *fsptr)
 void blkfree(void *fsptr, offset blk)
 {
 	fsheader *fsh=fsptr;
-	freeblk *fhead;
+	freereg *fhead;
 	
 	if(blk==NULLOFF) return;
 	if(fsh->freelist==NULLOFF){
 		fsh->freelist=blk;
-		fhead=(freeblk*)O2P(blk);
+		fhead=(freereg*)O2P(blk);
 	}else{
 		if(blk<fsh->freelist)
 			//if earliest, add as head
@@ -230,46 +259,51 @@ void blkfree(void *fsptr, offset blk)
 			//if right before list entry, merge
 			//if right after prev, merge
 	}fsh->free++;
-}
+}*/
 
 void fsinit(void *fsptr, size_t fssize)
 {
-	fsheader *fsh=fsptr;
-	freeblk *fhead;
+	fsheader *fshead=fsptr;
+	freereg *fhead;
 	node *rootnode;
-	if(fsh->size==fssize) return;
 	
-	fsh->ntsize=(1+BLKSZ/sizeof(node)+fssize/BLKSZ)/(1+BLKSZ/sizeof(node));
-	fsh->nodetbl=sizeof(node);
-	fsh->freelist=fsh->ntsize*BLKSZ;
-	fsh->free=fssize/BLKSZ-fsh->ntsize;
+	if(fshead->size==fssize/BLKSZ) return;
+	
+	fshead->ntsize=(BLOCKS_FILE*(1+BLKSZ/sizeof(node))+fssize/BLKSZ)/(1+BLOCKS_FILE*BLKSZ/sizeof(node));
+	//(1+BLKSZ/sizeof(node)+fssize/BLKSZ)/(1+BLKSZ/sizeof(node));
+	fshead->nodetbl=sizeof(node);
+	fshead->freelist=fshead->ntsize;
+	fshead->free=fssize/BLKSZ-fshead->ntsize;
 	
 	//initialize freelist head
-	fhead=(freeblk*)O2P(fsh->freelist);
-	fhead->size=fsh->free;
+	fhead=(freereg*)O2P(fshead->freelist*BLKSZ);
+	fhead->size=fshead->free;
 	fhead->next=NULLOFF;
-	fhead->prev=NULLOFF;
 	
 	//initialize root node
-	rootnode=(node*)O2P(nodetbl);
+	//rootnode=(node*)O2P(nodetbl);
 	
 	//initialize root dir
 	
-	fsh->size=fssize;
+	fshead->size=fssize/BLKSZ;
 }
+
+//Debug Functions===================================================================================
 
 void printfree(void *fsptr)
 {
-	fsheader *fsh=fsptr;
-	freeblk *frblk;
-	offset fblkoff;
+	fsheader *fshead=fsptr;
+	freereg *frblk;
+	blkset fblkoff;
 	
-	if(fsh->size==0) return;
+	if(fshead->size==0) return;
 	
-	fblkoff=fsh->freelist;
+	fblkoff=fshead->freelist;
+	if(fblkoff==NULLOFF) printf("No free blocks\n");
+	else printf("Freelist @ block %ld, total %ld blocks free\n",fblkoff,fshead->free);
 	while(fblkoff!=NULLOFF){
-		frblk=(freeblk*)O2P(fblkoff);
-		printf("Free region @ %ld, with %ld blocks\n",fblkoff,frblk->size);
+		frblk=(freereg*)O2P(fblkoff*BLKSZ);
+		printf("\tfree region @ block %ld, with %ld blocks\n",fblkoff,frblk->size);
 		fblkoff=frblk->next;
 	}
 }
@@ -306,9 +340,9 @@ void printfs(void *fsptr)
 	if(fsh->size==0){
 		printf("\tempty\n");
 		return;
-	}printf("\tSize:%ld bytes in %ld blocks of size %ld\n",fsh->size,fsh->size/BLKSZ,BLKSZ);
+	}printf("\tSize:%ld bytes in %ld blocks of size %ld\n",fsh->size*BLKSZ,fsh->size,BLKSZ);
 	printf("\tNode table of %ld blocks with %ld entries\n",fsh->ntsize,fsh->ntsize*BLKSZ/sizeof(node)-1);
-	printf("\tFree: %ld blocks, %ld bytes, first free block @ %ld\n",fsh->free,fsh->free*BLKSZ,fsh->freelist);
+	printf("\tFree: %ld blocks, %ld bytes, first free block: %ld\n",fsh->free,fsh->free*BLKSZ,fsh->freelist);
 }
 
 int main()
@@ -316,11 +350,18 @@ int main()
 	size_t fssize = PAGE_SIZE*FS_PAGES;
 	void *fsptr = mmap(NULL, fssize, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 	if(fsptr==MAP_FAILED) return 1;
+	blkset blks[3]={NULLOFF,NULLOFF,NULLOFF};
 	
 	fsinit(fsptr, fssize);
 	printfs(fsptr);
+	//printnodetbl(fsptr);
 	printfree(fsptr);
-	printnodetbl(fsptr);
+	blkalloc(fsptr,3,blks);
+	printfree(fsptr);
+	blkfree(fsptr,2,blks);
+	printfree(fsptr);
+	blkfree(fsptr,3,blks);
+	printfree(fsptr);
 	
 	munmap(fsptr, fssize);
 	return 0;

@@ -232,7 +232,70 @@
 */
 
 /* Helper types and functions */
+#define BLKSZ		(size_t)1024
+#define NULLOFF		(offset)0
+#define NONODE		(nodei)-1
+#define O2P(off)	(void*)((off)+fsptr)
+#define P2O(ptr)	(offset)((ptr)-fsptr)
+#define BLOCKS_FILE	4//average blocks per file
+#define	BLOCKS_NODE	5//#block offsets in node; such that sizeof(node) is 16 words
+#define NAMELEN		(256-sizeof(nodei))
 
+typedef size_t offset;
+typedef size_t blkset;
+typedef size_t sz_blk;
+typedef ssize_t nodei;
+
+typedef struct{
+	mode_t mode;
+	size_t nlinks;
+	size_t size;
+	sz_blk nblocks;
+	struct timespec atime;
+	struct timespec mtime;
+	struct timespec ctime;
+	
+	blkset blocks[BLOCKS_NODE];
+	blkset blocklist;
+} node;
+typedef struct{
+	sz_blk size;
+	blkset next;
+} freereg;
+typedef struct{
+	sz_blk size;
+	sz_blk free;
+	size_t nfree;
+	sz_blk ntsize;
+	blkset freelist;
+	offset nodetbl;
+} fsheader;
+
+nodei path2node(void *fsptr, char* path)//find node corresponding to path
+{
+	fsheader *fshead=(fsheader*)fsptr;
+	return NONODE;
+}
+
+void fsinit(void *fsptr, size_t fssize)
+{
+	fsheader *fshead=fsptr;
+	freereg *fhead;
+	node *rootnode;
+	
+	if(fshead->size==fssize/BLKSZ) return;
+	
+	fshead->ntsize=(BLOCKS_FILE*(1+BLKSZ/sizeof(node))+fssize/BLKSZ)/(1+BLOCKS_FILE*BLKSZ/sizeof(node));
+	fshead->nodetbl=sizeof(node);
+	fshead->freelist=fshead->ntsize;
+	fshead->free=fssize/BLKSZ-fshead->ntsize;
+	
+	fhead=(freereg*)O2P(fshead->freelist*BLKSZ);
+	fhead->size=fshead->free;
+	fhead->next=NULLOFF;
+	
+	fshead->size=fssize/BLKSZ;
+}
 
 /* End of helper functions */
 
@@ -265,6 +328,14 @@
 int __myfs_getattr_implem(void *fsptr, size_t fssize, int *errnoptr,
                           uid_t uid, gid_t gid,
                           const char *path, struct stat *stbuf) {
+	fsheader *fshead=fsptr;
+	nodei fnode;
+	
+	fsinit(fsptr,fssize);
+	if((fnode=path2node(fsptr,path))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}
   /* STUB */
   return -1;
 }
@@ -307,6 +378,14 @@ int __myfs_getattr_implem(void *fsptr, size_t fssize, int *errnoptr,
 */
 int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
                           const char *path, char ***namesptr) {
+	fsheader *fshead=fsptr;
+	nodei fnode;
+	
+	fsinit(fsptr,fssize);
+	if((fnode=path2node(fsptr,path))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}
   /* STUB */
   return -1;
 }
@@ -328,8 +407,10 @@ int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
    The error codes are documented in man 2 mknod.
 
 */
-int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr,
-                        const char *path) {
+int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
+	fsheader *fshead=fsptr;
+	
+	fsinit(fsptr,fssize);
   /* STUB */
   return -1;
 }
@@ -346,8 +427,15 @@ int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr,
    The error codes are documented in man 2 unlink.
 
 */
-int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr,
-                        const char *path) {
+int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
+	fsheader *fshead=fsptr;
+	nodei fnode;
+	
+	fsinit(fsptr,fssize);
+	if((fnode=path2node(fsptr,path))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}
   /* STUB */
   return -1;
 }
@@ -367,8 +455,15 @@ int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr,
    The error codes are documented in man 2 rmdir.
 
 */
-int __myfs_rmdir_implem(void *fsptr, size_t fssize, int *errnoptr,
-                        const char *path) {
+int __myfs_rmdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
+	fsheader *fshead=fsptr;
+	nodei fnode;
+	
+	fsinit(fsptr,fssize);
+	if((fnode=path2node(fsptr,path))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}
   /* STUB */
   return -1;
 }
@@ -385,8 +480,10 @@ int __myfs_rmdir_implem(void *fsptr, size_t fssize, int *errnoptr,
    The error codes are documented in man 2 mkdir.
 
 */
-int __myfs_mkdir_implem(void *fsptr, size_t fssize, int *errnoptr,
-                        const char *path) {
+int __myfs_mkdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
+	fsheader *fshead=fsptr;
+	
+	fsinit(fsptr,fssize);
   /* STUB */
   return -1;
 }
@@ -409,6 +506,9 @@ int __myfs_mkdir_implem(void *fsptr, size_t fssize, int *errnoptr,
 */
 int __myfs_rename_implem(void *fsptr, size_t fssize, int *errnoptr,
                          const char *from, const char *to) {
+	fsheader *fshead=fsptr;
+	
+	fsinit(fsptr,fssize);
   /* STUB */
   return -1;
 }
@@ -431,6 +531,14 @@ int __myfs_rename_implem(void *fsptr, size_t fssize, int *errnoptr,
 */
 int __myfs_truncate_implem(void *fsptr, size_t fssize, int *errnoptr,
                            const char *path, off_t offset) {
+	fsheader *fshead=fsptr;
+	nodei fnode;
+	
+	fsinit(fsptr,fssize);
+	if((fnode=path2node(fsptr,path))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}
   /* STUB */
   return -1;
 }
@@ -461,8 +569,15 @@ int __myfs_truncate_implem(void *fsptr, size_t fssize, int *errnoptr,
    The error codes are documented in man 2 open.
 
 */
-int __myfs_open_implem(void *fsptr, size_t fssize, int *errnoptr,
-                       const char *path) {
+int __myfs_open_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
+	fsheader *fshead=fsptr;
+	nodei fnode;
+	
+	fsinit(fsptr,fssize);
+	if((fnode=path2node(fsptr,path))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}
   /* STUB */
   return -1;
 }
@@ -484,6 +599,14 @@ int __myfs_open_implem(void *fsptr, size_t fssize, int *errnoptr,
 */
 int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
                        const char *path, char *buf, size_t size, off_t offset) {
+	fsheader *fshead=fsptr;
+	nodei fnode;
+	
+	fsinit(fsptr,fssize);
+	if((fnode=path2node(fsptr,path))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}
   /* STUB */
   return -1;
 }
@@ -505,6 +628,14 @@ int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
 */
 int __myfs_write_implem(void *fsptr, size_t fssize, int *errnoptr,
                         const char *path, const char *buf, size_t size, off_t offset) {
+	fsheader *fshead=fsptr;
+	nodei fnode;
+	
+	fsinit(fsptr,fssize);
+	if((fnode=path2node(fsptr,path))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}
   /* STUB */
   return -1;
 }
@@ -524,6 +655,14 @@ int __myfs_write_implem(void *fsptr, size_t fssize, int *errnoptr,
 */
 int __myfs_utimens_implem(void *fsptr, size_t fssize, int *errnoptr,
                           const char *path, const struct timespec ts[2]) {
+	fsheader *fshead=fsptr;
+	nodei fnode;
+	
+	fsinit(fsptr,fssize);
+	if((fnode=path2node(fsptr,path))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}
   /* STUB */
   return -1;
 }
@@ -553,16 +692,16 @@ int __myfs_utimens_implem(void *fsptr, size_t fssize, int *errnoptr,
 */
 int __myfs_statfs_implem(void *fsptr, size_t fssize, int *errnoptr,
                          struct statvfs* stbuf) {
-	fshead *fsh;
+	fsheader *fshead=fsptr;
 	
-	if(fsh=fsinit(fsptr,fssize)==NULL){
-		*errnoptr=ENOENT;
-		return -1;
-	}
+	fsinit(fsptr,fssize);
+	
 	stbuf->f_bsize=BLKSZ;
-	stbuf->f_blocks=fsh->size;
-	stbuf->f_bfree=fsh->free;
-	stbuf->f_bavail=fsh->free;
+	stbuf->f_blocks=fshead->size;
+	stbuf->f_bfree=fshead->free;
+	stbuf->f_bavail=fshead->free;
+	stbuf->f_files=fshead->ntsize*BLKSZ-1;
+	stbuf->f_ffree=fshead->nfree;
 	stbuf->f_namemax=NAMELEN;
 	return 0;
 }
