@@ -406,7 +406,8 @@ int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
 	if((namelist=malloc(count*sizeof(char*)))==NULL){
 		*errnoptr=EINVAL;
 		return -1;
-	}while(){//iterate dir blocks
+	}count=0;
+	while(){//iterate dir blocks
 		while(){//iterate block entries
 			if() break;//null entry
 			//get entry

@@ -34,7 +34,7 @@
 #include <errno.h>
 
 #define PAGE_SIZE	4096
-#define FS_PAGES	2
+#define FS_PAGES	1
 
 #define FILEMODE	(S_IFREG|0755)
 #define DIRMODE		(S_IFDIR|0755)
@@ -90,12 +90,10 @@ typedef struct{
 	offset nodetbl;
 } fsheader;
 
-nodei newnode(void *fsptr)//find first free node
-{
-	
-}
+/*
+nodei 
 
-/*nodei path2node(void *fsptr, char* path)//find node corresponding to path
+nodei path2node(void *fsptr, char* path)//find node corresponding to path
 {
 	fsheader *fshead=(fsheader*)fsptr;
 	return NONODE;
@@ -143,20 +141,47 @@ nodei falloc()
 	//add directory entry
 	return -1;
 }
-int frealloc()
+
+int frealloc(void *fsptr, nodei nd, off_t size)
 {
 	fsheader *fshead=(fsheader*)fsptr;
-	//check if expand shink fits in last block of file
-	return -1;
+	node *file;
+	ssize_t sdiff;
+	if(nd==NONODE) return -1;
+	file=O2P(fshead->nodetbl)[nd];
+	sdiff=CEILDIV(size,BLKSZ)-file->nblocks;
+	
+	if(sdiff>0){
+		//check if enough blocks in fs
+		//seek end of blocklist
+		//alloc
+		//zero
+	}else if(sdiff<0){
+		//find last sdiff blocks
+		//free
+	}//update size
+	return 0;
 }*/
 
-//multiple block allocation
-int blkalloc(void *fsptr, size_t count, blkset *buf)//return #blocks allocated?
+
+nodei newnode(void *fsptr)//find first free node
+{
+	fsheader *fshead=fsptr;
+	node *nodetbl=(node*)O2P(fshead->nodetbl);
+	size_t nodect=(fshead->ntsize*BLKSZ/sizeof(node))-1;
+	nodei i=0;
+	
+	while(++i<nodect){
+		if(nodetbl[i].nlinks==0) return i;
+	}return NONODE;
+}
+
+sz_blk blkalloc(void *fsptr, sz_blk count, blkset *buf)
 {
 	fsheader *fshead=fsptr;
 	blkset freeoff=fshead->freelist;
 	freereg *prev=NULL;
-	size_t alloct=0;
+	sz_blk alloct=0;
 	
 	while(freeoff!=NULLOFF && alloct<count){
 		freereg *fhead=O2P(freeoff*BLKSZ);
@@ -205,89 +230,53 @@ void offsort(blkset *offs, blkset *targ, size_t len)//clean
 		free(B);
 	}
 }
-void blkfree(void *fsptr, size_t count, blkset *buf)//clean
+void blkfree(void *fsptr, sz_blk count, blkset *buf)
 {
 	fsheader *fshead=fsptr;
 	blkset freeoff=fshead->freelist;
-	//end of fs?
+	freereg *fhead;
+	sz_blk freect=0;
+	
 	offsort(buf,buf,count);
-	while(count--){
-		//printf("cycle %ld, freeing block %ld\n",count,*buf);
-		if(*buf!=NULLOFF){
-			freereg *tmp=(freereg*)O2P(*buf*BLKSZ);
-			if(freeoff==NULLOFF){
-				//printf("empty freelist\n");
-				tmp->next=fshead->freelist;
-				fshead->freelist=*buf;
-				tmp->size=1;
-				freeoff=*buf;
+	while(freect<count && *buf<(fshead->ntsize)){
+		*(buf++)=NULLOFF;
+		count--;
+	}if(freect<count && ((freeoff==NULLOFF && *buf<fshead->size) || *buf<freeoff)){
+		fhead=(freereg*)O2P((freeoff=*buf)*BLKSZ);
+		fhead->next=fshead->freelist;
+		fshead->freelist=freeoff;
+		if((freeoff+(fhead->size=1))==fhead->next){
+			freereg *tmp=O2P(fhead->next*BLKSZ);
+			fhead->size+=tmp->size;
+			fhead->next=tmp->next;
+		}buf[freect++]=NULLOFF;
+	}while(freect<count && buf[freect]<fshead->size){
+		fhead=(freereg*)O2P(freeoff*BLKSZ);
+		if(buf[freect]>=(freeoff+fhead->size)){
+			if(fhead->next!=NULLOFF && buf[freect]>=fhead->next){
+				freeoff=fhead->next;
+				continue;
+			}if(buf[freect]==(freeoff+fhead->size)){
+				fhead->size++;
 			}else{
-				freereg *fhead=O2P(freeoff*BLKSZ);
-				if(fhead->next==NULLOFF || *buf<fhead->next){
-					if(*buf==freeoff+fhead->size){
-						//printf("free region extension\n");
-						fhead->size++;
-					}else{
-						tmp->size=1;
-						if(*buf<freeoff){
-							//printf("block precedes freelist\n");
-							tmp->next=fshead->freelist;
-							fshead->freelist=*buf;
-						}else{
-							//printf("block between free regions\n");
-							tmp->next=fhead->next;
-							fhead->next=*buf;
-						}fhead=tmp;
-						freeoff=*buf;
-					}if(fhead->next!=NULLOFF && freeoff+fhead->size==fhead->next){
-						//printf("merging free regions\n");
-						freereg *nxt=(freereg*)O2P(fhead->next*BLKSZ);
-						fhead->next=nxt->next;
-						fhead->size+=nxt->size;
-					}
-				}else{
-					//printf("seeking nearest free region\n");
-					freeoff=fhead->next;
-					continue;
-				}
-			}*buf=NULLOFF;
-			fshead->free++;
-			//printf("tmp free region @ %p, block %ld, size %ld, next: %ld\n",tmp,P2O((void*)tmp)/BLKSZ,tmp->size,tmp->next);
-		}//else printf("null block\n");
-		buf++;
-	}
+				freereg *tmp=O2P((freeoff=buf[freect])*BLKSZ);
+				tmp->next=fhead->next;
+				fhead->next=freeoff;
+				fhead=tmp;
+			}if((freeoff+fhead->size)==fhead->next){
+				freereg *tmp=O2P(fhead->next*BLKSZ);
+				fhead->size+=tmp->size;
+				fhead->next=tmp->next;
+			}buf[freect++]=NULLOFF;
+		}else{
+			(buf++)[freect]=NULLOFF;
+			count--;
+		]
+	}while(freect<count){
+		(buf++)[freect]=NULLOFF;
+		count--;
+	}fshead->free+=freect;
 }
-
-//single block allocation
-/*offset blkalloc(void *fsptr)
-{
-	fsheader *fsh=(fsheader*)fsptr;
-	freereg *fhead;
-	
-	if(fsh->freelist==NULLOFF) return NULLOFF;
-	fhead=(freereg*)O2P(fsh->freelist);
-	//decrement free region size, shift header
-	fsh->freelist=fhead->next;
-	fsh->free--;
-	return P2O(fhead);
-}
-void blkfree(void *fsptr, offset blk)
-{
-	fsheader *fsh=fsptr;
-	freereg *fhead;
-	
-	if(blk==NULLOFF) return;
-	if(fsh->freelist==NULLOFF){
-		fsh->freelist=blk;
-		fhead=(freereg*)O2P(blk);
-	}else{
-		if(blk<fsh->freelist)
-			//if earliest, add as head
-		//iterate freelist
-			//if right before list entry, merge
-			//if right after prev, merge
-	}fsh->free++;
-}*/
 
 void fsinit(void *fsptr, size_t fssize)
 {
@@ -298,13 +287,11 @@ void fsinit(void *fsptr, size_t fssize)
 	if(fshead->size==fssize/BLKSZ) return;
 	
 	fshead->ntsize=(BLOCKS_FILE*(1+BLKSZ/sizeof(node))+fssize/BLKSZ)/(1+BLOCKS_FILE*BLKSZ/sizeof(node));
-	//(1+BLKSZ/sizeof(node)+fssize/BLKSZ)/(1+BLKSZ/sizeof(node));
 	fshead->nodetbl=sizeof(node);
 	fshead->nfree=BLKSZ*fshead->ntsize/sizeof(node);
 	fshead->freelist=fshead->ntsize;
 	fshead->free=fssize/BLKSZ-fshead->ntsize;
 	
-	//initialize freelist head
 	fhead=(freereg*)O2P(fshead->freelist*BLKSZ);
 	fhead->size=fshead->free;
 	fhead->next=NULLOFF;
@@ -319,38 +306,22 @@ void fsinit(void *fsptr, size_t fssize)
 
 //Debug Functions===================================================================================
 
-void printfree(void *fsptr)
-{
-	fsheader *fshead=fsptr;
-	freereg *frblk;
-	blkset fblkoff;
-	
-	if(fshead->size==0) return;
-	
-	fblkoff=fshead->freelist;
-	if(fblkoff==NULLOFF) printf("No free blocks\n");
-	else printf("Freelist @ block %ld, total %ld blocks free\n",fblkoff,fshead->free);
-	while(fblkoff!=NULLOFF){
-		frblk=(freereg*)O2P(fblkoff*BLKSZ);
-		printf("\tfree region @ block %ld, with %ld blocks\n",fblkoff,frblk->size);
-		fblkoff=frblk->next;
-	}
-}
-
 void printdirtree(void *fsptr)
 {
 
 }
 
-void printnodetbl(void *fsptr)
+void printnodes(void *fsptr)
 {
-	fsheader *fsh=fsptr;
-	node *nodetbl=(node*)O2P(fsh->nodetbl);
-	nodei i, nodect;
+	fsheader *fshead=fsptr;
+	node *nodetbl=O2P(fshead->nodetbl);
+	size_t nodect;
+	nodei i;
 	
-	if(fsh->size==0) return;
+	if(fshead->size==0) return;
 	
-	nodect=(fsh->ntsize*BLKSZ/sizeof(node))-1;
+	nodect=(fshead->ntsize*BLKSZ/sizeof(node))-1;
+	printf("\tNode table of %ld blocks with %ld entries\n",fshead->ntsize,nodect);
 	for(i=0;i<nodect;i++){
 		printf("Node %ld:\n",i);
 		if(nodetbl[i].nlinks){
@@ -362,16 +333,34 @@ void printnodetbl(void *fsptr)
 	}
 }
 
+void printfree(void *fsptr)
+{
+	fsheader *fshead=fsptr;
+	freereg *frblk;
+	blkset fblkoff;
+	
+	if(fshead->size==0) return;
+	
+	fblkoff=fshead->freelist;
+	printf("\tFree: %ld bytes in %ld blocks, freelist @ block %ld\n",fshead->free*BLKSZ,fshead->free,fblkoff);
+	while(fblkoff!=NULLOFF){
+		frblk=(freereg*)O2P(fblkoff*BLKSZ);
+		printf("\t\tfree region @ block %ld, with %ld blocks\n",fblkoff,frblk->size);
+		fblkoff=frblk->next;
+	}
+}
+
 void printfs(void *fsptr)
 {
-	fsheader *fsh=fsptr;
+	fsheader *fshead=fsptr;
+	
 	printf("Filesystem @%p\n",fsptr);
-	if(fsh->size==0){
+	if(fshead->size==0){
 		printf("\tempty\n");
 		return;
-	}printf("\tSize:%ld bytes in %ld blocks of size %ld\n",fsh->size*BLKSZ,fsh->size,BLKSZ);
-	printf("\tNode table of %ld blocks with %ld entries\n",fsh->ntsize,fsh->ntsize*BLKSZ/sizeof(node)-1);
-	printf("\tFree: %ld blocks, %ld bytes, first free block: %ld\n",fsh->free,fsh->free*BLKSZ,fsh->freelist);
+	}printf("\tSize:%ld bytes in %ld %ld byte blocks\n",fshead->size*BLKSZ,fshead->size,BLKSZ);
+	printfree(fsptr);
+	//printnodes(fsptr);
 }
 
 int main()
@@ -379,18 +368,9 @@ int main()
 	size_t fssize = PAGE_SIZE*FS_PAGES;
 	void *fsptr = mmap(NULL, fssize, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 	if(fsptr==MAP_FAILED) return 1;
-	blkset blks[3]={NULLOFF,NULLOFF,NULLOFF};
 	
 	fsinit(fsptr, fssize);
 	printfs(fsptr);
-	//printnodetbl(fsptr);
-	printfree(fsptr);
-	blkalloc(fsptr,3,blks);
-	printfree(fsptr);
-	blkfree(fsptr,2,blks);
-	printfree(fsptr);
-	blkfree(fsptr,3,blks);
-	printfree(fsptr);
 	
 	munmap(fsptr, fssize);
 	return 0;
