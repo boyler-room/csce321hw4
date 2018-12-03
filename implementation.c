@@ -719,16 +719,17 @@ int __myfs_write_implem(void *fsptr, size_t fssize, int *errnoptr,
 int __myfs_utimens_implem(void *fsptr, size_t fssize, int *errnoptr,
                           const char *path, const struct timespec ts[2]) {
 	fsheader *fshead=fsptr;
-	nodei fnode;
+	nodei fnode; node *file;
 	
 	fsinit(fsptr,fssize);
 	if((fnode=path2node(fsptr,path))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}
-	//change times in node
-  /* STUB */
-  return -1;
+	}file=(node*)O2P(fshead->nodetbl)[fnode];
+	
+	file->atime=ts[0];
+	file->mtime=ts[1];
+	return 0;
 }
 
 /* Implements an emulation of the statfs system call on the filesystem 
@@ -765,7 +766,7 @@ int __myfs_statfs_implem(void *fsptr, size_t fssize, int *errnoptr,
 	stbuf->f_bfree=fshead->free;
 	stbuf->f_bavail=fshead->free;
 	stbuf->f_files=fshead->ntsize*BLKSZ-1;
-	stbuf->f_ffree=fshead->nfree;
+	stbuf->f_ffree=fshead->ndfree;
 	stbuf->f_namemax=NAMELEN;
 	return 0;
 }

@@ -17,6 +17,7 @@
 		fsinit() - check if the filesystem has been initialized, and do so if not
 		blkalloc() - allocate the first count or fewer blocks, putting the offsets in buf, returns # blocks allocated
 		blkfree() - free up to count blocks from the offsets in buf
+		newnode() - finds the index of the first empty node
 	Debug functions:
 		printfs() - print global fs data
 		printfree() - list free regions
@@ -84,26 +85,25 @@ typedef struct{
 typedef struct{
 	sz_blk size;
 	sz_blk free;
-	size_t nfree;
+	size_t ndfree;
 	sz_blk ntsize;
-	blkset freelist;
 	offset nodetbl;
+	blkset freelist;
 } fsheader;
 
 /*
-nodei 
-
-nodei path2node(void *fsptr, char* path)//find node corresponding to path
-{
-	fsheader *fshead=(fsheader*)fsptr;
-	return NONODE;
-}
-
-nodei pathparent(void *fsptr, char* path)//find node of parent directory
-{
-	fsheader *fshead=(fsheader*)fsptr;
-	return NONODE;
-}
+TODO:
+	open
+		verify path (path2node)
+	readdir
+	mkdir
+	mknod
+	rmdir
+	unlink
+	rename
+	truncate
+	read
+	write
 
 void ndlink()
 {
@@ -162,9 +162,23 @@ int frealloc(void *fsptr, nodei nd, off_t size)
 	}//update size
 	return 0;
 }*/
+void makedir(void *fsptr, nodei nd)
+{
+	
+}
 
+void findentry(void *fsptr, nodei dir, char *name)
 
-nodei newnode(void *fsptr)//find first free node
+void linknode(void *fsptr, nodei nd, char *name, dir parent)
+{
+	//verify/get parent from path
+	//check parent is dir
+	//check if name already in dir
+	//add entry to parent dirfile
+	//inc nd link count
+}
+
+nodei newnode(void *fsptr)
 {
 	fsheader *fshead=fsptr;
 	node *nodetbl=(node*)O2P(fshead->nodetbl);
@@ -174,6 +188,23 @@ nodei newnode(void *fsptr)//find first free node
 	while(++i<nodect){
 		if(nodetbl[i].nlinks==0) return i;
 	}return NONODE;
+}
+
+//recursive method?
+nodei path2node(void *fsptr, char *path, int parent)//find node corresponding to path or up to parentth parent dir
+{
+	fsheader *fshead=(fsheader*)fsptr;
+	//check for root in path
+	//cnodei=root node
+	//for subs in path
+		//get cnode of cnodei
+		//load path sub til next '/'
+		//if end of path '\0'
+			//ret nodei
+		//if file: break/ret error
+		//find loaded sub in cnode blocks
+		//get cnodei
+	return NONODE;
 }
 
 sz_blk blkalloc(void *fsptr, sz_blk count, blkset *buf)
@@ -282,11 +313,12 @@ void fsinit(void *fsptr, size_t fssize)
 {
 	fsheader *fshead=fsptr;
 	freereg *fhead;
-	node *rootnode;
+	node *root;
 	
 	if(fshead->size==fssize/BLKSZ) return;
 	
 	fshead->ntsize=(BLOCKS_FILE*(1+BLKSZ/sizeof(node))+fssize/BLKSZ)/(1+BLOCKS_FILE*BLKSZ/sizeof(node));
+	fshead->ndfree=(fshead->ntsize*BLKSZ/sizeof(node))-2;
 	fshead->nodetbl=sizeof(node);
 	fshead->nfree=BLKSZ*fshead->ntsize/sizeof(node);
 	fshead->freelist=fshead->ntsize;
@@ -297,9 +329,16 @@ void fsinit(void *fsptr, size_t fssize)
 	fhead->next=NULLOFF;
 	
 	//initialize root node
-	//rootnode=(node*)O2P(nodetbl);
-	
-	//initialize root dir
+	root=(node*)O2P(fshead->nodetbl);
+	root->mode=DIRMODE;
+	//set timestamps
+	root->nlinks=1;
+	for(int i=0;i<BLOCKS_NODE;i++)
+		root->blocks[i]=NULLOFF;
+	root->blocklist=NULLOFF;
+	root->nblocks=blkalloc(fsptr,1,root->blocks);
+	root->size=root->nblocks*BLKSZ;
+	//init dirfile
 	
 	fshead->size=fssize/BLKSZ;
 }
