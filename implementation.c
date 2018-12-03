@@ -630,16 +630,12 @@ int __myfs_truncate_implem(void *fsptr, size_t fssize, int *errnoptr,
 */
 int __myfs_open_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
 	fsheader *fshead=fsptr;
-	nodei fnode;
 	
 	fsinit(fsptr,fssize);
-	if((fnode=path2node(fsptr,path))==NONODE){
+	if(path2node(fsptr,path)==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}
-	//verify path
-  /* STUB */
-  return -1;
+	}return 0;
 }
 
 /* Implements an emulation of the read system call on the filesystem 

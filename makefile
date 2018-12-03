@@ -5,4 +5,4 @@ debug: myfs.c implementation.c
 test: fstst.c
 	gcc -Wall -o fstst fstst.c
 clean:
-	rm fstst myfs 
+	rm -f fstst myfs 

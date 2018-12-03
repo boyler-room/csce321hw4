@@ -9,7 +9,7 @@
 		sz_blk: size in blocks
 		nodei: index into node table, NONODE represents an invalid/null node
 		fsheader: filesystem global header, should always be at fsptr
-		node: file node entry, file metadata and block offsets to the first BLOCKS_NODE data blocks, and to a block 			with additional offsets
+		node: file node entry, file metadata and block offsets to the first OFFS_NODE data blocks, and to a block 			with additional offsets
 		offblock: block with additional block offsets to data
 		dir: dir file block, WIP, gaps in file list should be closed when created
 		direntry: file entry in dir, contains name and node index, WIP
@@ -37,18 +37,20 @@
 #define PAGE_SIZE	4096
 #define FS_PAGES	1
 
-#define FILEMODE	(S_IFREG|0755)
-#define DIRMODE		(S_IFDIR|0755)
 #define CEILDV(A,B)	((A+B-1)/B)
-#define BLKSZ		(size_t)1024
-#define NULLOFF		(offset)0
-#define NONODE		(nodei)-1
 #define O2P(off)	(void*)((off)+fsptr)
 #define P2O(ptr)	(offset)((ptr)-fsptr)
-#define	FILES_DIR	4//average files per dir?
-#define BLOCKS_FILE	4//average blocks per file
-#define	BLOCKS_NODE	5//#block offsets in node; such that sizeof(node) is 16 words
+#define NULLOFF		(offset)0
+#define NONODE		(nodei)-1
+#define BLKSZ		(size_t)1024
 #define NAMELEN		(256-sizeof(nodei))
+#define NODES_BLOCK	(BLKSZ/sizeof(inode))
+#define	FILES_DIR	(BLKSZ/sizeof(direntry))
+#define	OFFS_BLOCK	(BLKSZ/sizeof(blkset))
+#define	OFFS_NODE	5//#block offsets in inode; such that sizeof(inode) is 16 words
+#define BLOCKS_FILE	4//average blocks per file
+#define FILEMODE	(S_IFREG|0755)
+#define DIRMODE		(S_IFDIR|0755)
 
 typedef size_t offset;
 typedef size_t blkset;
@@ -60,11 +62,8 @@ typedef struct{
 	char name[NAMELEN];
 } direntry;
 typedef struct{
-	direntry files[BLKSZ/sizeof(direntry)];
-} dir;
-typedef struct{
 	blkset next;
-	blkset blocks[BLKSZ-sizeof(offset)];
+	blkset blocks[BLKSZ/sizeof(blkset)-1];
 } offblock;
 typedef struct{
 	mode_t mode;
@@ -75,9 +74,9 @@ typedef struct{
 	struct timespec mtime;
 	struct timespec ctime;
 	
-	blkset blocks[BLOCKS_NODE];
+	blkset blocks[OFFS_NODE];
 	blkset blocklist;
-} node;
+} inode;
 typedef struct{
 	sz_blk size;
 	blkset next;
@@ -85,10 +84,10 @@ typedef struct{
 typedef struct{
 	sz_blk size;
 	sz_blk free;
+	blkset freelist;
 	size_t ndfree;
 	sz_blk ntsize;
 	offset nodetbl;
-	blkset freelist;
 } fsheader;
 
 /*
@@ -145,7 +144,7 @@ nodei falloc()
 int frealloc(void *fsptr, nodei nd, off_t size)
 {
 	fsheader *fshead=(fsheader*)fsptr;
-	node *file;
+	inode *file;
 	ssize_t sdiff;
 	if(nd==NONODE) return -1;
 	file=O2P(fshead->nodetbl)[nd];
@@ -162,27 +161,30 @@ int frealloc(void *fsptr, nodei nd, off_t size)
 	}//update size
 	return 0;
 }*/
-void makedir(void *fsptr, nodei nd)
+/*
+void makedir(void *fsptr, nodei node)
 {
 	
 }
 
-void findentry(void *fsptr, nodei dir, char *name)
+nodei findfile(void *fsptr, nodei dir, char *name)
+{
+}
 
-void linknode(void *fsptr, nodei nd, char *name, dir parent)
+void linknode(void *fsptr, nodei node, char *name, dir parent)
 {
 	//verify/get parent from path
 	//check parent is dir
 	//check if name already in dir
 	//add entry to parent dirfile
 	//inc nd link count
-}
+}*/
 
 nodei newnode(void *fsptr)
 {
 	fsheader *fshead=fsptr;
-	node *nodetbl=(node*)O2P(fshead->nodetbl);
-	size_t nodect=(fshead->ntsize*BLKSZ/sizeof(node))-1;
+	inode *nodetbl=O2P(fshead->nodetbl);
+	size_t nodect=fshead->ntsize*NODES_BLOCK-1;
 	nodei i=0;
 	
 	while(++i<nodect){
@@ -190,21 +192,121 @@ nodei newnode(void *fsptr)
 	}return NONODE;
 }
 
-//recursive method?
-nodei path2node(void *fsptr, char *path, int parent)//find node corresponding to path or up to parentth parent dir
+int namepatheq(char *name, char *path)
+{
+	while(*path!='/' && *path!='\0'){
+		if(*name=='\0' || *name!=*path) return 0;
+		name++; path++;
+	}return (*name=='\0');
+}
+
+/*
+
+//convert path to linked list?
+nodei subpathnode(void *fsptr, nodei node, char* subpath)
+{
+	if(subpath[0]=='\0') return node;
+	//find first subpath entry in
+}
+
+int nodevalid(void *fsptr, nodei node)
 {
 	fsheader *fshead=(fsheader*)fsptr;
-	//check for root in path
-	//cnodei=root node
-	//for subs in path
-		//get cnode of cnodei
-		//load path sub til next '/'
-		//if end of path '\0'
-			//ret nodei
-		//if file: break/ret error
-		//find loaded sub in cnode blocks
-		//get cnodei
-	return NONODE;
+	node *nodetbl=O2P(fshead->nodetbl);
+	
+	if(node==NONODE || node>=(fshead->ntsize*NODES_BLOCK-1)) return 0;
+	if(nodetbl[node].nlinks<=0 || n) return 0;
+	if() return 0;
+	return 1;
+}
+
+nodei dirmod(void *fsptr, nodei dir, char *name, nodei node, char *rename)
+{
+	fsheader *fshead=(fsheader*)fsptr;
+	node *nodetbl=O2P(fshead->nodetbl);
+	blkset oblk=NULLOFF, dblk=nodetbl[dir].blocks[0];
+	size_t off=0;
+	
+	if(nodetbl[dir].mode!=DIRMODE) return NONODE;
+	
+	while(dblk!=NULL){
+		size_t fl;
+		for(fl=0;fl<FILES_DIR;fl++){
+			//go through dir entries
+		}
+		off++;
+		if(oblk==NULLOFF){//in node list
+			if(off==OFFS_NODE){
+				off=0;
+				oblk=nodetbl[dir].blocklist;
+				if(oblk==NULLOFF) dblk=NULLOFF;
+				else dblk=(offblock*)O2P(oblk*BLKSZ).blocks[0];
+			}else dblk=nodetbl[dir].blocks[off];
+		}else{//in offset block
+			if
+		}
+	}
+	//find node: node==NONODE, rename==NULL
+		//return node on found
+		//after loop: return NONODE
+	//add if not found: node!=NONODE, rename==NULL
+		//return NONODE on found
+		//after loop: extend dir if needed, append new entry, return node
+	//find and remove: node!=NONODE, rename!=NULL
+		//save entry location on found, break?
+		//after loop: if location saved overwrite w/ last entry, null last entry, shrink dir if needed
+			//return node if found, NONODE if not
+	//find and change name: node==NONODE, rename!=NULL
+		//change name and return on found
+		//after loop: return NONODE
+	
+	//returns node on success, NONODE on fail
+}
+direntry* dirfind(void *fsptr, nodei dir, char *name)
+{
+	//search node blocklist
+	//search 
+	//return on found
+}
+int diradd(void *fsptr, nodei dir, char *name, nodei node)
+{
+	//dirfind, return fail if found
+	//at end of dir: extend if needed
+	//set direntry node,name
+}
+int dirrem(void *fsptr, nodei dir, char *name)
+{
+	//dirfind
+	//if not found ret fail
+	//get last direntry
+	//set found entry with last entry
+	//nullout last entry, free block if needed
+}
+
+char* pathsplit(char *path)
+{
+	set last / to '\0'
+	return ptr to name
+}
+*/
+//split off last entry in path
+
+nodei path2node(void *fsptr, char *path)//, int parent)//find node corresponding to path or up to parentth parent dir
+{
+	fsheader *fshead=(fsheader*)fsptr;
+	inode *nodetbl=O2P(fshead->nodetbl);
+	nodei node=0;
+	size_t sub=1;
+	
+	if(path[0]!='/') return NONODE;
+	
+	while(path[sub]!='\0'){
+		//node=dirmod(fsptr,node,&path[sub],NONODE,NULL);
+		if(node==NONODE) return NONODE;
+		while(path[sub]!='\0'){
+			if(path[sub++]=='/') break;
+		}
+	}return node;
 }
 
 sz_blk blkalloc(void *fsptr, sz_blk count, blkset *buf)
@@ -302,7 +404,7 @@ void blkfree(void *fsptr, sz_blk count, blkset *buf)
 		}else{
 			(buf++)[freect]=NULLOFF;
 			count--;
-		]
+		}
 	}while(freect<count){
 		(buf++)[freect]=NULLOFF;
 		count--;
@@ -313,14 +415,14 @@ void fsinit(void *fsptr, size_t fssize)
 {
 	fsheader *fshead=fsptr;
 	freereg *fhead;
-	node *root;
+	inode *root;
+	direntry *rootfile;
 	
 	if(fshead->size==fssize/BLKSZ) return;
 	
-	fshead->ntsize=(BLOCKS_FILE*(1+BLKSZ/sizeof(node))+fssize/BLKSZ)/(1+BLOCKS_FILE*BLKSZ/sizeof(node));
-	fshead->ndfree=(fshead->ntsize*BLKSZ/sizeof(node))-2;
-	fshead->nodetbl=sizeof(node);
-	fshead->nfree=BLKSZ*fshead->ntsize/sizeof(node);
+	fshead->ntsize=(BLOCKS_FILE*(1+NODES_BLOCK)+fssize/BLKSZ)/(1+BLOCKS_FILE*NODES_BLOCK);
+	fshead->ndfree=(fshead->ntsize*NODES_BLOCK)-2;
+	fshead->nodetbl=sizeof(inode);
 	fshead->freelist=fshead->ntsize;
 	fshead->free=fssize/BLKSZ-fshead->ntsize;
 	
@@ -328,17 +430,17 @@ void fsinit(void *fsptr, size_t fssize)
 	fhead->size=fshead->free;
 	fhead->next=NULLOFF;
 	
-	//initialize root node
-	root=(node*)O2P(fshead->nodetbl);
+	root=(inode*)O2P(fshead->nodetbl);
 	root->mode=DIRMODE;
 	//set timestamps
 	root->nlinks=1;
-	for(int i=0;i<BLOCKS_NODE;i++)
-		root->blocks[i]=NULLOFF;
 	root->blocklist=NULLOFF;
 	root->nblocks=blkalloc(fsptr,1,root->blocks);
+	root->blocks[1]=NULLOFF;
 	root->size=root->nblocks*BLKSZ;
-	//init dirfile
+	
+	rootfile=(direntry*)O2P(root->blocks[0]*BLKSZ);
+	rootfile->node=NONODE;
 	
 	fshead->size=fssize/BLKSZ;
 }
@@ -347,27 +449,44 @@ void fsinit(void *fsptr, size_t fssize)
 
 void printdirtree(void *fsptr)
 {
-
+	fsheader *fshead=fsptr;
+	inode *nodetbl=O2P(fshead->nodetbl);
+	blkset dblk=nodetbl->blocks[0];
+	
+	
 }
 
 void printnodes(void *fsptr)
 {
 	fsheader *fshead=fsptr;
-	node *nodetbl=O2P(fshead->nodetbl);
-	size_t nodect;
+	inode *nodetbl=O2P(fshead->nodetbl);
+	size_t nodect,j,k;
 	nodei i;
 	
 	if(fshead->size==0) return;
 	
-	nodect=(fshead->ntsize*BLKSZ/sizeof(node))-1;
-	printf("\tNode table of %ld blocks with %ld entries\n",fshead->ntsize,nodect);
+	nodect=(fshead->ntsize*NODES_BLOCK)-1;
+	printf("Node table of %ld blocks with %ld entries\n",fshead->ntsize,nodect);
 	for(i=0;i<nodect;i++){
-		printf("Node %ld:\n",i);
+		printf("\tNode %ld, ",i);
 		if(nodetbl[i].nlinks){
-			if(nodetbl[i].mode &S_IFDIR) printf("\tdirectory\n");
-			printf("\tlinks: %ld, size: %ld",nodetbl[i].nlinks,nodetbl[i].size);
+			blkset offb=nodetbl[i].blocklist;
+			if(nodetbl[i].mode==DIRMODE) printf("directory, ");
+			else if(nodetbl[i].mode==FILEMODE) printf("regular file, ");
+			else printf("mode not set, ");
+			printf("%ld links, %ld bytes in %ld blocks\n",nodetbl[i].nlinks,nodetbl[i].size,nodetbl[i].nblocks);
+			for(j=0;j<OFFS_NODE;j++){
+				if(nodetbl[i].blocks[j]==NULLOFF) break;
+				printf("\t\tBlock @ %ld in node list\n",nodetbl[i].blocks[j]);
+			}for(k=0;offb!=NULLOFF;k++){
+				offblock *oblk=O2P(offb*BLKSZ);
+				for(j=0;j<BLKSZ-1;j++){
+					printf("\t\tBlock @ %ld in offset block %ld\n",oblk->blocks[j],k);
+					if(oblk->blocks[j]==NULLOFF) break;
+				}offb=oblk->next;
+			}
 		}else{
-			printf("\tempty\n");
+			printf("empty\n");
 		}
 	}
 }
@@ -399,7 +518,7 @@ void printfs(void *fsptr)
 		return;
 	}printf("\tSize:%ld bytes in %ld %ld byte blocks\n",fshead->size*BLKSZ,fshead->size,BLKSZ);
 	printfree(fsptr);
-	//printnodes(fsptr);
+	printnodes(fsptr);
 }
 
 int main()
