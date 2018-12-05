@@ -1013,14 +1013,10 @@ int __myfs_truncate_implem(void *fsptr, size_t fssize, int *errnoptr,
 	}if((node=path2node(fsptr,path))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}
-	//if same (#blocks) update bytesize
-	//elif bigger, check possible
-		//alloc new blocks, zero out
-	//elif smaller
-		//free blocks from end
-  /* STUB */
-  return -1;
+	}if(frealloc(fsptr,node,offset)==-1){
+		*errnoptr=EINVAL;
+		return -1;
+	}return 0;
 }
 
 /* Implements an emulation of the open system call on the filesystem 
