@@ -241,9 +241,9 @@
 #define BLKSZ		(size_t)1024
 #define NAMELEN		(256-sizeof(nodei))
 #define NODES_BLOCK	(BLKSZ/sizeof(inode))
-#define	FILES_DIR	(BLKSZ/sizeof(direntry))
-#define	OFFS_BLOCK	(BLKSZ/sizeof(blkset))
-#define	OFFS_NODE	5//#block offsets in inode; such that sizeof(inode) is 16 words
+#define FILES_DIR	(BLKSZ/sizeof(direntry))
+#define OFFS_BLOCK	(BLKSZ/sizeof(blkset))
+#define OFFS_NODE	5//#block offsets in inode; such that sizeof(inode) is 16 words
 #define BLOCKS_FILE	4//average blocks per file
 #define FILEMODE	(S_IFREG|0755)
 #define DIRMODE		(S_IFDIR|0755)
