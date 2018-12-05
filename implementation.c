@@ -789,6 +789,7 @@ int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
 int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
 	fsheader *fshead=fsptr;
 	inode *nodetbl;
+	struct timespec creation;
 	nodei pnode, node;
 	
 	if(fsinit(fsptr,fssize)==-1){
@@ -801,6 +802,9 @@ int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	}if((node=newnode(fsptr))==NONODE){
 		*errnoptr=ENOSPC;
 		return -1;
+	}if(timespec_get(&creation,TIME_UTC)!=TIME_UTC){
+		*errnoptr=EACCES;
+		return -1;
 	}if(dirmod(fsptr,pnode,pathsplit(path),node,NULL)==NONODE){
 		*errnoptr=EEXIST;
 		return -1;
@@ -811,8 +815,8 @@ int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	nodetbl[node].nblocks=0;
 	nodetbl[node].blocks[0]=NULLOFF;
 	nodetbl[node].blocklist=NULLOFF;
-	if(timespec_get(&(nodetbl[node].ctime),TIME_UTC)!=TIME_UTC) return -1;
-	nodetbl[node].mtime=nodetbl[node].ctime;
+	nodetbl[node].ctime=creation;
+	nodetbl[node].mtime=creation;
 	return 0;
 }
 
@@ -830,20 +834,20 @@ int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 */
 int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
 	fsheader *fshead=fsptr;
-	nodei node;
+	inode *nodetbl;
+	nodei pnode;
 	
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
-	}if((node=path2node(fsptr,path))==NONODE){
+	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	if((pnode=path2parent(fsptr,path))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}
-	//check if file?
-	//unlink node/null+shift dir entry
-	//if 0 links, free file data
-  /* STUB */
-  return -1;
+	}if(dirmod(fsptr,pnode,pathsplit(path),0,"")==NONODE){
+		*errnoptr=EEXIST;
+		return -1;
+	}return 0;
 }
 
 /* Implements an emulation of the rmdir system call on the filesystem 
@@ -863,21 +867,23 @@ int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr, const char *
 */
 int __myfs_rmdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
 	fsheader *fshead=fsptr;
-	nodei node;
+	inode *nodetbl;
+	nodei pnode;
 	
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
-	}if((node=path2node(fsptr,path))==NONODE){
+	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	if((pnode=path2parent(fsptr,path))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}
-	//check if dir
-	//check dir contents, fail if not empty
-	//unlink node from parent
-	//if 0 links, free file data
-  /* STUB */
-  return -1;
+	}if(nodetbl[pnode].size>0){
+		*errnoptr=ENOTEMPTY;
+		return -1;
+	}if(dirmod(fsptr,pnode,pathsplit(path),0,"")==NONODE){
+		*errnoptr=EEXIST;
+		return -1;
+	}return 0;
 }
 
 /* Implements an emulation of the mkdir system call on the filesystem 
@@ -894,17 +900,36 @@ int __myfs_rmdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 */
 int __myfs_mkdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
 	fsheader *fshead=fsptr;
+	inode *nodetbl;
+	struct timespec creation;
+	nodei pnode, node;
 	
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
-	}//verify parent dir
-	//new node
-	//init attrs
-	//link to parent dir
-	//allocate/init dirfile
-  /* STUB */
-  return -1;
+	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	if((pnode=path2parent(fsptr,path))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}if((node=newnode(fsptr))==NONODE){
+		*errnoptr=ENOSPC;
+		return -1;
+	}if(timespec_get(&creation,TIME_UTC)!=TIME_UTC){
+		*errnoptr=EACCES;
+		return -1;
+	}if(dirmod(fsptr,pnode,pathsplit(path),node,NULL)==NONODE){
+		*errnoptr=EEXIST;
+		return -1;
+	}
+	
+	nodetbl[node].mode=DIRMODE;
+	nodetbl[node].size=0;
+	nodetbl[node].nblocks=0;
+	nodetbl[node].blocks[0]=NULLOFF;
+	nodetbl[node].blocklist=NULLOFF;
+	nodetbl[node].ctime=creation;
+	nodetbl[node].mtime=creation;
+	return 0;
 }
 
 /* Implements an emulation of the rename system call on the filesystem 
@@ -926,17 +951,39 @@ int __myfs_mkdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 int __myfs_rename_implem(void *fsptr, size_t fssize, int *errnoptr,
                          const char *from, const char *to) {
 	fsheader *fshead=fsptr;
+	inode *nodetbl;
+	nodei pfrom, pto, file;
 	
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
-	}//get/verify parentfrom, parentto, filefrom
-	//if same parents, change name
-	//else
-	//link node to parentto
-	//unlink from parentfrom
-  /* STUB */
-  return -1;
+	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	if((pfrom=path2parent(fsptr,from))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}if((pto=path2parent(fsptr,to))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}if((file=dirmod(fsptr,pfrom,pathsplit(from),NONODE,NULL))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}
+	
+	if(pto==pfrom){
+		if(dirmod(fsptr,pfrom,pathsplit(from),NONODE,pathsplit(to))==NONODE){
+			*errnoptr=EEXIST;
+			return -1;
+		}return 0;
+	}
+	
+	if(dirmod(fsptr,pto,pathsplit(to),file,NULL)==NONODE){
+		*errnoptr=EEXIST;
+		return -1;
+	}if(dirmod(fsptr,pfrom,pathsplit(from),0,"")==NONODE){
+		dirmod(fsptr,pto,pathsplit(to),0,"");
+		*errnoptr=EACCES;
+		return -1;
+	}return 0;
 }
 
 /* Implements an emulation of the truncate system call on the filesystem 
@@ -1148,8 +1195,6 @@ int __myfs_statfs_implem(void *fsptr, size_t fssize, int *errnoptr,
 	stbuf->f_blocks=fshead->size;
 	stbuf->f_bfree=fshead->free;
 	stbuf->f_bavail=fshead->free;
-	stbuf->f_files=fshead->ntsize*NODES_BLOCK-1;
-	stbuf->f_ffree=fshead->ndfree;
 	stbuf->f_namemax=NAMELEN-1;
 	return 0;
 }

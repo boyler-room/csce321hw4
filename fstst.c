@@ -85,7 +85,6 @@ typedef struct{
 	sz_blk size;
 	sz_blk free;
 	blkset freelist;
-	size_t ndfree;
 	sz_blk ntsize;
 	offset nodetbl;
 } fsheader;
@@ -97,54 +96,70 @@ typedef struct{
 
 /*
 TODO:
-		verify path (path2node)
-	readdir
-	mkdir
-	mknod
-	rmdir
-	unlink
-	rename
+	documentation
+	in-place offsort
+	better path2parent
+	dirmod removal
+harder
 	truncate
 	read
 	write
+*/
 
-void ndlink()
+nodei newnode(void *fsptr)
 {
-	fsheader *fshead=(fsheader*)fsptr;
+	fsheader *fshead=fsptr;
+	inode *nodetbl=O2P(fshead->nodetbl);
+	size_t nodect=fshead->ntsize*NODES_BLOCK-1;
+	nodei i=0;
+	
+	while(++i<nodect){
+		if(nodetbl[i].nlinks==0) return i;
+	}return NONODE;
 }
 
-void ndunlink()
+
+int nodevalid(void *fsptr, nodei node)//0 valid
 {
 	fsheader *fshead=(fsheader*)fsptr;
+	inode *nodetbl=O2P(fshead->nodetbl);
+	
+	return (node<0 || node>=(fshead->ntsize*NODES_BLOCK-1) ||
+		(nodetbl[node].mode!=DIRMODE && nodetbl[node].mode!=FILEMODE));
 }
 
-int ffree()
+void namepathset(const char *name, const char *path)
 {
-	fsheader *fshead=(fsheader*)fsptr;
-	//remove directory entry, free dblock if necc
-	//decrement link count
-	//if !zero return
-	//go through node blocklist
-		//add block to free list(and merge)
-	//free blocklist blocks
-	//null node block offsets
-	return -1;
-}
-nodei falloc()
-{
-	fsheader *fshead=(fsheader*)fsptr;
-	//check space, incl offset blocks
-	//find a free node
-	//init node info
-	//trawl the freelist
-		//go through blocks in free region
-			//add to node list
-			//if list full, expand
-		//resize/remove free region
-	//add directory entry
-	return -1;
+	size_t len=0;
+	if(name==path) return;
+	while(path[len]!='/' && path[len]!='\0'){
+		name[len]=path[len];
+		if(++len==NAMELEN-1) break;
+	}name[len]='\0';
 }
 
+int namepatheq(const char *name, const char *path)
+{
+	size_t len=0;
+	if(name==path) return 1;
+	while(path[len]!='/' && path[len]!='\0'){
+		if(name[len]=='\0' || name[len]!=path[len]) return 0;
+		if(++len==NAMELEN) return 1;
+	}return (name[len]=='\0');
+}
+
+char* pathsplit(const char *path)
+{
+	size_t cur=0;
+	while(path[cur]!='\0'){
+		if(path[cur++]=='/'){
+			path=&path[cur];
+			cur=0;
+		}
+	}return path;
+}
+
+/*
 int frealloc(void *fsptr, nodei nd, off_t size)
 {
 	fsheader *fshead=(fsheader*)fsptr;
@@ -166,66 +181,6 @@ int frealloc(void *fsptr, nodei nd, off_t size)
 	return 0;
 }*/
 /*
-void makedir(void *fsptr, nodei node)
-{
-	
-}
-
-nodei findfile(void *fsptr, nodei dir, char *name)
-{
-}
-
-void linknode(void *fsptr, nodei node, char *name, dir parent)
-{
-	//verify/get parent from path
-	//check parent is dir
-	//check if name already in dir
-	//add entry to parent dirfile
-	//inc nd link count
-}*/
-
-nodei newnode(void *fsptr)
-{
-	fsheader *fshead=fsptr;
-	inode *nodetbl=O2P(fshead->nodetbl);
-	size_t nodect=fshead->ntsize*NODES_BLOCK-1;
-	nodei i=0;
-	
-	while(++i<nodect){
-		if(nodetbl[i].nlinks==0) return i;
-	}return NONODE;
-}
-
-void namepathset(char *name, char *path)
-{
-	size_t len=0;
-	while(path[len]!='/' && path[len]!='\0'){
-		name[len]=path[len];
-		if(++len==NAMELEN-1) break;
-	}name[len]='\0';
-}
-
-int namepatheq(char *name, char *path)
-{
-	size_t len=0;
-	while(path[len]!='/' && path[len]!='\0'){
-		if(name[len]=='\0' || name[len]!=path[len]) return 0;
-		if(++len==NAMELEN) return 1;
-	}return (name[len]=='\0');
-}
-
-char* pathsplit(char *path)
-{
-	size_t cur=0;
-	while(path[cur]!='\0'){
-		if(path[cur++]=='/'){
-			path=&path[cur];
-			cur=0;
-		}
-	}return path;
-}
-
-/*
 
 //convert path to linked list?
 nodei subpathnode(void *fsptr, nodei node, char* subpath)
@@ -233,57 +188,21 @@ nodei subpathnode(void *fsptr, nodei node, char* subpath)
 	if(subpath[0]=='\0') return node;
 	//find first subpath entry in
 }
-
-int nodevalid(void *fsptr, nodei node)
-{
-	fsheader *fshead=(fsheader*)fsptr;
-	node *nodetbl=O2P(fshead->nodetbl);
-	
-	if(node==NONODE || node>=(fshead->ntsize*NODES_BLOCK-1)) return 0;
-	if(nodetbl[node].nlinks<=0 || n) return 0;
-	if() return 0;
-	return 1;
-}
-direntry* dirfind(void *fsptr, nodei dir, char *name)
-{
-	//search node blocklist
-	//search 
-	//return on found
-}
-int diradd(void *fsptr, nodei dir, char *name, nodei node)
-{
-	//dirfind, return fail if found
-	//at end of dir: extend if needed
-	//set direntry node,name
-}
-int dirrem(void *fsptr, nodei dir, char *name)
-{
-	//dirfind
-	//if not found ret fail
-	//get last direntry
-	//set found entry with last entry
-	//nullout last entry, free block if needed
-}
-
-//split off last entry in path
-char* pathsplit(char *path)
-{
-	set last / to '\0'
-	return ptr to name
-}
 */
 
 int fsinit(void *fsptr, size_t fssize)
 {
 	fsheader *fshead=fsptr;
 	freereg *fhead;
-	inode *root;
+	inode *nodetbl;
+	nodei node;
+	struct timespec creation;
 	
 	if(fssize<2*BLKSZ) return -1;
 	if(fshead->size==fssize/BLKSZ) return 0;
+	if(timespec_get(&creation,TIME_UTC)!=TIME_UTC) return -1;
 	
 	fshead->ntsize=(BLOCKS_FILE*(1+NODES_BLOCK)+fssize/BLKSZ)/(1+BLOCKS_FILE*NODES_BLOCK);
-	fshead->ndfree=(fshead->ntsize*NODES_BLOCK)-2;
 	fshead->nodetbl=sizeof(inode);
 	fshead->freelist=fshead->ntsize;
 	fshead->free=fssize/BLKSZ-fshead->ntsize;
@@ -292,16 +211,18 @@ int fsinit(void *fsptr, size_t fssize)
 	fhead->size=fshead->free;
 	fhead->next=NULLOFF;
 	
-	root=(inode*)O2P(fshead->nodetbl);
-	root->mode=DIRMODE;
-	if(timespec_get(&(root->ctime),TIME_UTC)!=TIME_UTC) return -1;
-	root->mtime=root->ctime;
-	root->nlinks=1;
-	root->size=0;
-	root->nblocks=0;
-	root->blocks[0]=NULLOFF;
-	root->blocklist=NULLOFF;
-	//null out other nodes?
+	nodetbl=(inode*)O2P(fshead->nodetbl);
+	nodetbl[0].mode=DIRMODE;
+	nodetbl[0].ctime=creation;
+	nodetbl[0].mtime=creation;
+	nodetbl[0].nlinks=1;
+	nodetbl[0].size=0;
+	nodetbl[0].nblocks=0;
+	nodetbl[0].blocks[0]=NULLOFF;
+	nodetbl[0].blocklist=NULLOFF;
+	for(node=1;node<fshead->ntsize*NODES_BLOCK-1;node++){
+		nodetbl[node].nlinks=0;
+	}
 	
 	fshead->size=fssize/BLKSZ;
 	return 0;
@@ -431,30 +352,21 @@ nodei dirmod(void *fsptr, nodei dir, char *name, nodei node, char *rename)
 	fsheader *fshead=fsptr;
 	inode *nodetbl=O2P(fshead->nodetbl);
 	blkset oblk=NULLOFF, dblk=nodetbl[dir].blocks[0];
-	direntry *df;
+	direntry *df, *found=NULL;
 	size_t block=0, entry=0;
 	
-	if(nodetbl[dir].nlinks==0 || nodetbl[dir].mode!=DIRMODE) return NONODE;
-	//check node and dir fit in nodetbl?
-	//update dir size,nblocks,nlinks on add/remove
+	if(nodevalid(fsptr,dir) || nodetbl[dir].mode!=DIRMODE) return NONODE;
+	//if(node!=NONODE && rename==NULL && nodevalid(fsptr,node)) return NONODE;
 	
 	while(dblk!=NULLOFF){
 		df=(direntry*)O2P(dblk*BLKSZ);
 		while(entry<FILES_DIR){
 			if(df[entry].node==NONODE) break;
-			if(namepatheq(df[entry].name,name)){
-				if(rename!=NULL){
-					if(node==NONODE){
-						namepathset(df[entry].name,rename);
-						return df[entry].node;
-					}else{
-						//seek to end of dir
-						//overwrite found w/ last
-						//nullout last
-						//if empty dblock, free
-						return df[entry].node;
-					}
-				}else{
+			if(node==NONODE && rename!=NULL && namepatheq(df[entry].name,rename)){
+				return NONODE;
+			}if(namepatheq(df[entry].name,name)){
+				if(rename!=NULL) found=&df[entry];
+				else{
 					if(node==NONODE) return df[entry].node;
 					else return NONODE;
 				}
@@ -481,8 +393,49 @@ nodei dirmod(void *fsptr, nodei dir, char *name, nodei node, char *rename)
 				}
 			}else dblk=offs->blocks[block];
 		}
-	}if(node==NONODE || rename!=NULL) return NONODE;
-	if(dblk==NULLOFF){
+	}if(node==NONODE){
+		if(rename!=NULL && found!=NULL){
+			namepathset(found->name,rename);
+			return found->node;
+		}return NONODE;
+	}if(rename!=NULL){
+		node=found->node;
+		if(found==NULL) return NONODE;
+		if(dblk!=NULL){
+			if entry 0: free block, find last
+			
+		}else{
+		}df=(direntry*)O2P(dblk*BLKSZ);//get valid entry,dblk,oblk last
+		found->node=df[entry].node;
+		df[entry].node=NONODE;
+		namepathset(found->name,df[entry].name);
+		if(entry==0){
+			free dblk
+			if(block==0){
+				free oblk,update last next
+			}
+		}
+		nodetbl[dir].size-=sizeof(direntry);
+		nodetbl[node].nlinks--;
+		if(--(nodetbl[node].nlinks)==0){
+			//free file, frealloc
+		}
+		/*cases:
+			not found: found NULL
+			dblk:
+				in nodelist: oblk=NULL
+					last: 
+				in offblock: 
+					last: 
+		*/
+		//overwrite found w/ last
+		//nullout last
+		//unlink node, free data if 0
+		//if empty dblock, free
+		//if empty oblock, free
+		//update dir node times?
+		return node;
+	}if(dblk==NULLOFF){
 		offblock *offs;
 		if(oblk==NULLOFF){
 			if(block==OFFS_NODE){
@@ -526,7 +479,8 @@ nodei dirmod(void *fsptr, nodei dir, char *name, nodei node, char *rename)
 				}
 			}offs->blocks[block]=dblk;
 			offs->blocks[1]=NULLOFF;
-		}df=(direntry*)O2P(dblk*BLKSZ);
+		}nodetbl[dir].nblocks++;
+		df=(direntry*)O2P(dblk*BLKSZ);
 	}nodetbl[dir].size+=sizeof(direntry);
 	df[entry].node=node;
 	namepathset(df[entry].name,name);
@@ -547,7 +501,7 @@ nodei dirmod(void *fsptr, nodei dir, char *name, nodei node, char *rename)
 		if(pcount) pcount--, return parent
 		else return node
 */
-nodei path2node(void *fsptr, char *path)//, int parent)//find node corresponding to path or up to parentth parent dir
+nodei path2node(void *fsptr, const char *path)//, int parent)//find node corresponding to path or up to parentth parent dir
 {
 	fsheader *fshead=fsptr;
 	inode *nodetbl=O2P(fshead->nodetbl);
@@ -564,7 +518,7 @@ nodei path2node(void *fsptr, char *path)//, int parent)//find node corresponding
 		}
 	}return node;
 }
-nodei path2parent(void *fsptr, char *path)//, int parent)//find node corresponding to path or up to parentth parent dir
+nodei path2parent(void *fsptr, const char *path)//, int parent)//find node corresponding to path or up to parentth parent dir
 {
 	fsheader *fshead=fsptr;
 	inode *nodetbl=O2P(fshead->nodetbl);
@@ -622,8 +576,6 @@ void printdir(void *fsptr, nodei dir, size_t level)
 			}else dblk=offs->blocks[block];
 		}
 	}
-	//iter entries in dir
-		//call printdir(fsptr,sub,level+1) for each entry
 }
 
 void printnodes(void *fsptr)
@@ -707,7 +659,9 @@ int main()
 	printf("%ld\n",dirmod(fsptr,0,"loop",2,NULL));
 	printf("%ld\n",dirmod(fsptr,0,"jim",2,NULL));
 	printf("%ld\n",dirmod(fsptr,0,"jimb",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"craw",2,NULL));
 	printf("%ld\n",dirmod(fsptr,1,"jimbo",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"jimbo",NONODE,"cra"));
 	printdir(fsptr,0,0);
 	//printf("%ld\n",dirmod(fsptr,0,"loop",NONODE,NULL));
 	//printf("%ld\n",dirmod(fsptr,1,"froot",2,NULL));
