@@ -316,17 +316,6 @@ int namepatheq(char *name, const char *path)
 	}return (name[len]=='\0');
 }
 
-char* pathsplit(char *path)
-{
-	size_t cur=0;
-	while(path[cur]!='\0'){
-		if(path[cur++]=='/'){
-			path=&path[cur];
-			cur=0;
-		}
-	}return path;
-}
-
 int fsinit(void *fsptr, size_t fssize)
 {
 	fsheader *fshead=fsptr;
@@ -574,40 +563,24 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 	return node;
 }
 
-nodei path2node(void *fsptr, const char *path)
+//find node corresponding to path, if child!=NULL, return node of path's parent dir and set *child to the filename
+nodei path2node(void *fsptr, const char *path, char **child)
 {
 	fsheader *fshead=fsptr;
 	inode *nodetbl=O2P(fshead->nodetbl);
 	nodei node=0;
-	size_t sub=1;
+	index sub=1, ch=1;
 	
 	if(path[0]!='/') return NONODE;
 	
-	while(path[sub]!='\0'){
-		node=dirmod(fsptr,node,&path[sub],NONODE,NULL);
-		if(node==NONODE) return NONODE;
-		while(path[sub]!='\0'){
-			if(path[sub++]=='/') break;
-		}
-	}return node;
-}
-nodei path2parent(void *fsptr, char *path)//find node corresponding to parent dir
-{
-	fsheader *fshead=fsptr;
-	inode *nodetbl=O2P(fshead->nodetbl);
-	char name[NAMELEN];
-	nodei node=0;
-	size_t sub=1;
-	
-	if(path[0]!='/') return NONODE;
-	
-	while(path[sub]!='\0'){
-		namepathset(name,&path[sub]);
-		while(path[sub]!='\0'){
-			if(path[sub++]=='/') break;
-		}if(path[sub]=='\0') return node;
-		node=dirmod(fsptr,node,name,NONODE,NULL);
-		if(node==NONODE) return NONODE;
+	while(path[sub=ch]!='\0'){
+		while(path[ch]!='\0'){
+			if(path[ch++]=='/') break;
+		}if(child!=NULL && path[ch]=='\0'){
+			*child=&path[sub];
+			break;
+		}if((node=dirmod(fsptr,node,&path[sub],NONODE,NULL))==NONODE)
+			return NONODE;
 	}return node;
 }
 
@@ -650,7 +623,8 @@ int __myfs_getattr_implem(void *fsptr, size_t fssize, int *errnoptr,
 		*errnoptr=EFAULT;
 		return -1;
 	}nodetbl=(inode*)O2P(fshead->nodetbl);
-	if((node=path2node(fsptr,path))==NONODE){
+	
+	if((node=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}
@@ -716,7 +690,8 @@ int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
 		*errnoptr=EFAULT;
 		return -1;
 	}nodetbl=O2P(fshead->nodetbl);
-	if((dir=path2node(fsptr,path))==NONODE){
+	
+	if((dir=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}if(nodetbl[dir].mode!=DIRMODE){
@@ -743,8 +718,6 @@ int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
 				*errnoptr=EINVAL;
 				return -1;
 			}strcpy(namelist[count],df[entry].name);
-			//malloc,copy,append df[entry].name
-			//on fail, go back thru list and free
 			entry++; count++;
 		}if(entry<FILES_DIR) break;
 		block++; entry=0;
@@ -791,12 +764,14 @@ int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	inode *nodetbl;
 	struct timespec creation;
 	nodei pnode, node;
+	char *fname;
 	
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
 	}nodetbl=(inode*)O2P(fshead->nodetbl);
-	if((pnode=path2parent(fsptr,path))==NONODE){
+	
+	if((pnode=path2parent(fsptr,path,&fname))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}if((node=newnode(fsptr))==NONODE){
@@ -805,7 +780,7 @@ int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	}if(timespec_get(&creation,TIME_UTC)!=TIME_UTC){
 		*errnoptr=EACCES;
 		return -1;
-	}if(dirmod(fsptr,pnode,pathsplit(path),node,NULL)==NONODE){
+	}if(dirmod(fsptr,pnode,fname,node,NULL)==NONODE){
 		*errnoptr=EEXIST;
 		return -1;
 	}
@@ -836,15 +811,17 @@ int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr, const char *
 	fsheader *fshead=fsptr;
 	inode *nodetbl;
 	nodei pnode;
+	char *fname;
 	
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
 	}nodetbl=(inode*)O2P(fshead->nodetbl);
-	if((pnode=path2parent(fsptr,path))==NONODE){
+	
+	if((pnode=path2node(fsptr,path,&fname))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}if(dirmod(fsptr,pnode,pathsplit(path),0,"")==NONODE){
+	}if(dirmod(fsptr,pnode,fname,0,"")==NONODE){
 		*errnoptr=EEXIST;
 		return -1;
 	}return 0;
@@ -869,18 +846,20 @@ int __myfs_rmdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	fsheader *fshead=fsptr;
 	inode *nodetbl;
 	nodei pnode;
+	char *fname;
 	
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
 	}nodetbl=(inode*)O2P(fshead->nodetbl);
-	if((pnode=path2parent(fsptr,path))==NONODE){
+	
+	if((pnode=path2node(fsptr,path,&fname))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}if(nodetbl[pnode].size>0){
 		*errnoptr=ENOTEMPTY;
 		return -1;
-	}if(dirmod(fsptr,pnode,pathsplit(path),0,"")==NONODE){
+	}if(dirmod(fsptr,pnode,fname,0,"")==NONODE){
 		*errnoptr=EEXIST;
 		return -1;
 	}return 0;
@@ -903,12 +882,13 @@ int __myfs_mkdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	inode *nodetbl;
 	struct timespec creation;
 	nodei pnode, node;
+	char *fname;
 	
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
 	}nodetbl=(inode*)O2P(fshead->nodetbl);
-	if((pnode=path2parent(fsptr,path))==NONODE){
+	if((pnode=path2node(fsptr,path,&fname))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}if((node=newnode(fsptr))==NONODE){
@@ -917,7 +897,7 @@ int __myfs_mkdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	}if(timespec_get(&creation,TIME_UTC)!=TIME_UTC){
 		*errnoptr=EACCES;
 		return -1;
-	}if(dirmod(fsptr,pnode,pathsplit(path),node,NULL)==NONODE){
+	}if(dirmod(fsptr,pnode,fname,node,NULL)==NONODE){
 		*errnoptr=EEXIST;
 		return -1;
 	}
@@ -953,34 +933,36 @@ int __myfs_rename_implem(void *fsptr, size_t fssize, int *errnoptr,
 	fsheader *fshead=fsptr;
 	inode *nodetbl;
 	nodei pfrom, pto, file;
+	char *ffrom, *fto;
 	
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
 	}nodetbl=(inode*)O2P(fshead->nodetbl);
-	if((pfrom=path2parent(fsptr,from))==NONODE){
+	
+	if((pfrom=path2node(fsptr,from,&ffrom))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}if((pto=path2parent(fsptr,to))==NONODE){
+	}if((pto=path2node(fsptr,to,&fto))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}if((file=dirmod(fsptr,pfrom,pathsplit(from),NONODE,NULL))==NONODE){
+	}if((file=dirmod(fsptr,pfrom,ffrom,NONODE,NULL))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}
 	
 	if(pto==pfrom){
-		if(dirmod(fsptr,pfrom,pathsplit(from),NONODE,pathsplit(to))==NONODE){
+		if(dirmod(fsptr,pfrom,ffrom,NONODE,fto)==NONODE){
 			*errnoptr=EEXIST;
 			return -1;
 		}return 0;
 	}
 	
-	if(dirmod(fsptr,pto,pathsplit(to),file,NULL)==NONODE){
+	if(dirmod(fsptr,pto,fto,file,NULL)==NONODE){
 		*errnoptr=EEXIST;
 		return -1;
-	}if(dirmod(fsptr,pfrom,pathsplit(from),0,"")==NONODE){
-		dirmod(fsptr,pto,pathsplit(to),0,"");
+	}if(dirmod(fsptr,pfrom,ffrom,0,"")==NONODE){
+		dirmod(fsptr,pto,fto,0,"");
 		*errnoptr=EACCES;
 		return -1;
 	}return 0;
@@ -1010,7 +992,7 @@ int __myfs_truncate_implem(void *fsptr, size_t fssize, int *errnoptr,
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
-	}if((node=path2node(fsptr,path))==NONODE){
+	}if((node=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}if(frealloc(fsptr,node,offset)==-1){
@@ -1051,7 +1033,7 @@ int __myfs_open_implem(void *fsptr, size_t fssize, int *errnoptr, const char *pa
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
-	}if(path2node(fsptr,path)==NONODE){
+	}if(path2node(fsptr,path,NULL)==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}return 0;
@@ -1075,18 +1057,28 @@ int __myfs_open_implem(void *fsptr, size_t fssize, int *errnoptr, const char *pa
 int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
                        const char *path, char *buf, size_t size, off_t offset) {
 	fsheader *fshead=fsptr;
+	inode *nodetbl;
 	nodei node;
+	fpos pos;
 	
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
-	}if((node=path2node(fsptr,path))==NONODE){
+	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	
+	if((node=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}
 	//check notdir
-	//verify/seek to offset
-	//read up to size bytes to buf
+	//loadpos(fsptr,node,&pos);
+	/*if(advance(fsptr,&pos,0,offset)<offset) return -1;
+	while !eof && count<size
+		copy byte to buffer
+		inc count
+		advance
+	return count
+	*/
   /* STUB */
   return -1;
 }
@@ -1109,15 +1101,22 @@ int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
 int __myfs_write_implem(void *fsptr, size_t fssize, int *errnoptr,
                         const char *path, const char *buf, size_t size, off_t offset) {
 	fsheader *fshead=fsptr;
+	inode *nodetbl;
 	nodei node;
+	fpos pos;
 	
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
 		return -1;
-	}if((node=path2node(fsptr,path))==NONODE){
+	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	
+	if((node=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}
+	/*
+		
+	*/
   /* STUB */
   return -1;
 }
@@ -1145,7 +1144,8 @@ int __myfs_utimens_implem(void *fsptr, size_t fssize, int *errnoptr,
 		*errnoptr=EFAULT;
 		return -1;
 	}nodetbl=(inode*)O2P(fshead->nodetbl);
-	if((node=path2node(fsptr,path))==NONODE){
+	
+	if((node=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}
