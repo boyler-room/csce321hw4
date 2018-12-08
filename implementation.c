@@ -25,20 +25,6 @@
 
 */
 
-#include <stddef.h>
-#include <sys/stat.h>
-#include <sys/statvfs.h>
-#include <stdint.h>
-#include <string.h>
-#include <time.h>
-#include <stdlib.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <stdio.h>
-
-
 /* The filesystem you implement must support all the 13 operations
    stubbed out below. There need no be support for access rights,
    links, symbolic links. There needs to be support for access and
@@ -231,60 +217,20 @@
 
 */
 
-/* Helper types and functions */
+#include "myfs_helper.h"
 
-#define CEILDV(A,B)	((A+B-1)/B)
-#define O2P(off)	(void*)((off)+fsptr)
-#define P2O(ptr)	(offset)((ptr)-fsptr)
-#define NULLOFF		(offset)0
-#define NONODE		(nodei)-1
-#define BLKSZ		(size_t)1024
-#define NAMELEN		(256-sizeof(nodei))
-#define NODES_BLOCK	(BLKSZ/sizeof(inode))
-#define FILES_DIR	(BLKSZ/sizeof(direntry))
-#define OFFS_BLOCK	(BLKSZ/sizeof(blkset))
-#define OFFS_NODE	5//#block offsets in inode; such that sizeof(inode) is 16 words
-#define BLOCKS_FILE	4//average blocks per file
-#define FILEMODE	(S_IFREG|0755)
-#define DIRMODE		(S_IFDIR|0755)
-
-typedef size_t offset;
-typedef size_t blkset;
-typedef size_t sz_blk;
-typedef ssize_t nodei;
-
-typedef struct{
-	nodei node;
-	char name[NAMELEN];
-} direntry;
-typedef struct{
-	blkset next;
-	blkset blocks[OFFS_BLOCK-1];
-} offblock;
-typedef struct{
-	mode_t mode;
-	size_t nlinks;
-	size_t size;
-	sz_blk nblocks;
-	struct timespec atime;
-	struct timespec mtime;
-	struct timespec ctime;
+/*Implementation Details
 	
-	blkset blocks[OFFS_NODE];
-	blkset blocklist;
-} inode;
-typedef struct{
-	sz_blk size;
-	blkset next;
-} freereg;
-typedef struct{
-	sz_blk size;
-	sz_blk free;
-	blkset freelist;
-	size_t ndfree;
-	sz_blk ntsize;
-	offset nodetbl;
-} fsheader;
+*/
+/*Implementation Decisions
+	Fixed length file names
+		truncation
+	Node table size
+	directories as files
+	offsets/node/offset blocks
+*/
+
+//CLEAN OUT
 
 nodei newnode(void *fsptr)
 {
@@ -810,7 +756,7 @@ int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
 	fsheader *fshead=fsptr;
 	inode *nodetbl;
-	nodei pnode;
+	nodei pnode, file;
 	char *fname;
 	
 	if(fsinit(fsptr,fssize)==-1){
@@ -821,10 +767,11 @@ int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr, const char *
 	if((pnode=path2node(fsptr,path,&fname))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}if(dirmod(fsptr,pnode,fname,0,"")==NONODE){
+	}if((file=dirmod(fsptr,pnode,fname,0,""))==NONODE){
 		*errnoptr=EEXIST;
 		return -1;
-	}return 0;
+	}//free file data
+	return 0;
 }
 
 /* Implements an emulation of the rmdir system call on the filesystem 
