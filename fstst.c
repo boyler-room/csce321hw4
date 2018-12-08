@@ -165,6 +165,8 @@ void printfs(void *fsptr)
 	}printf("\tSize:%ld bytes in %ld %ld byte blocks\n",fshead->size*BLKSZ,fshead->size,BLKSZ);
 	printfree(fsptr);
 	printnodes(fsptr);
+	printf("/(0)\n");
+	printdir(fsptr,0,1);
 }
 
 //test functions
@@ -187,13 +189,13 @@ int main()
 	printfs(fsptr);
 	
 	//nodetbl[1].mode=DIRMODE;
-	//printf("%ld\n",dirmod(fsptr,0,"devolo",1,NULL));
+	printf("%ld\n",dirmod(fsptr,0,"devolo",1,NULL));
 	nodetbl[2].mode=DIRMODE;
 	//printf("%ld\n",dirmod(fsptr,0,"dev",1,NULL));
 	//printf("%ld\n",dirmod(fsptr,0,"etc",2,NULL));
-	printf("%ld\n",dirmod(fsptr,0,"tty0",2,NULL));
-	printf("%ld\n",dirmod(fsptr,2,"tty1",1,NULL));
-	/*printf("%ld\n",dirmod(fsptr,0,"tty2",2,NULL));
+	/*printf("%ld\n",dirmod(fsptr,0,"tty0",2,NULL));
+	printf("%ld\n",dirmod(fsptr,0,"tty1",1,NULL));
+	printf("%ld\n",dirmod(fsptr,0,"tty2",2,NULL));
 	printf("%ld\n",dirmod(fsptr,0,"tty3",2,NULL));
 	printf("%ld\n",dirmod(fsptr,0,"tty4",2,NULL));
 	printf("%ld\n",dirmod(fsptr,0,"tty5",2,NULL));
@@ -211,20 +213,21 @@ int main()
 	printf("%ld\n",dirmod(fsptr,0,"tty17",2,NULL));
 	printf("%ld\n",dirmod(fsptr,0,"tty18",2,NULL));
 	printf("%ld\n",dirmod(fsptr,0,"tty19",2,NULL));
-	printf("%ld\n",dirmod(fsptr,2,"tty20",1,NULL));
-	printf("%ld\n",dirmod(fsptr,2,"tty21",1,NULL));
-	printf("%ld\n",dirmod(fsptr,2,"tty22",1,NULL));
-	printf("%ld\n",dirmod(fsptr,2,"tty23",1,NULL));
+	printf("%ld\n",dirmod(fsptr,0,"tty20",1,NULL));
+	printf("%ld\n",dirmod(fsptr,0,"tty21",1,NULL));
+	printf("%ld\n",dirmod(fsptr,0,"tty22",1,NULL));
+	printf("%ld\n",dirmod(fsptr,0,"tty23",1,NULL));
 	loadpos(fsptr,&pos,0);
-	//while(pos.data!=NULLOFF){
+	while(pos.data!=NULLOFF){
 		printpos(pos);
-		printf("advancement: %ld\n",advance(fsptr,&pos,0,nodetbl[0].size));
-	//}
+		printf("advancement: %ld\n",seek(fsptr,&pos,2));
+		//printf("advancement: %ld\n",advance(fsptr,&pos,nodetbl[0].nblocks));
+	}
 	printpos(pos);*/
 	
 	//printf("%ld\n",dirmod(fsptr,1,"input",2,NULL));
 	//printf("%ld\n",dirmod(fsptr,1,"input",0,""));
-	//printfs(fsptr);
+	printfs(fsptr);
 	/*printf("%ld\n",dirmod(fsptr,0,"dev",1,NULL));
 	printf("%ld\n",dirmod(fsptr,1,"craw",2,NULL));
 	printfs(fsptr);
@@ -239,7 +242,7 @@ int main()
 	printfs(fsptr);
 	printf("%ld\n",path2node(fsptr,"/dev",NULL));
 	printf("%ld\n",path2node(fsptr,"/jim",NULL));*/
-	printdir(fsptr,0,0);
+	//printdir(fsptr,0,0);
 	
 	munmap(fsptr, fssize);
 	return 0;

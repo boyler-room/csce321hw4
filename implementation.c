@@ -419,7 +419,7 @@ int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 		return -1;
 	}nodetbl=(inode*)O2P(fshead->nodetbl);
 	
-	if((pnode=path2parent(fsptr,path,&fname))==NONODE){
+	if((pnode=path2node(fsptr,path,&fname))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}if((node=newnode(fsptr))==NONODE){
@@ -458,7 +458,7 @@ int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
 	fsheader *fshead=fsptr;
 	inode *nodetbl;
-	nodei pnode, file;
+	nodei pnode, node;
 	const char *fname;
 	
 	if(fsinit(fsptr,fssize)==-1){
@@ -469,10 +469,10 @@ int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr, const char *
 	if((pnode=path2node(fsptr,path,&fname))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}if((file=dirmod(fsptr,pnode,fname,0,""))==NONODE){
+	}if((node=dirmod(fsptr,pnode,fname,0,""))==NONODE){
 		*errnoptr=EEXIST;
 		return -1;
-	}if(nodetbl[file].nlinks==0) frealloc(fsptr,file,0);
+	}if(nodetbl[node].nlinks==0) frealloc(fsptr,node,0);
 	return 0;
 }
 
@@ -494,7 +494,7 @@ int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr, const char *
 int __myfs_rmdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
 	fsheader *fshead=fsptr;
 	inode *nodetbl;
-	nodei pnode;
+	nodei pnode, node;
 	const char *fname;
 	
 	if(fsinit(fsptr,fssize)==-1){
@@ -504,9 +504,6 @@ int __myfs_rmdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	
 	if((pnode=path2node(fsptr,path,&fname))==NONODE){
 		*errnoptr=ENOENT;
-		return -1;
-	}if(nodetbl[pnode].size>0){
-		*errnoptr=ENOTEMPTY;
 		return -1;
 	}if(dirmod(fsptr,pnode,fname,0,"")==NONODE){
 		*errnoptr=EEXIST;

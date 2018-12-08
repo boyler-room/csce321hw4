@@ -40,7 +40,9 @@
 		return 0 on valid -1 on bad
 	loadpos
 	advance
+	seek
 	...
+	frealloc
 	namepathset
 	namepatheq
 	dirmod
@@ -148,7 +150,7 @@ int nodevalid(void *fsptr, nodei node);
 void loadpos(void *fsptr, fpos *pos, nodei node);
 sz_blk advance(void *fsptr, fpos *pos, sz_blk blks);
 size_t seek(void *fsptr, fpos *pos, size_t off);
-int frealloc(void *fsptr, nodei node, off_t size);
+int frealloc(void *fsptr, nodei node, size_t size);
 void namepathset(char *name, const char *path);
 int namepatheq(char *name, const char *path);
 nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *rename);
