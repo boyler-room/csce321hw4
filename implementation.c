@@ -381,7 +381,7 @@ int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
 		}else{
 			offblock *offs=O2P(oblk*BLKSZ);
 			oblk=offs->next;
-			if(block==OFFS_BLOCK-1){
+			if(block==OFFS_BLOCK){
 				if(oblk==NULLOFF) dblk=NULLOFF;
 				else dblk=((offblock*)O2P(oblk*BLKSZ))->blocks[block=0];
 			}else dblk=offs->blocks[block];

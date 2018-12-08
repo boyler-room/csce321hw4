@@ -40,7 +40,7 @@
 
 #include <sys/mman.h>
 #define PAGE_SIZE	4096
-#define FS_PAGES	2
+#define FS_PAGES	3
 
 #include "myfs_helper.h"
 
@@ -91,7 +91,7 @@ void printdir(void *fsptr, nodei dir, size_t level)
 		}else{
 			offblock *offs=O2P(oblk*BLKSZ);
 			oblk=offs->next;
-			if(block==OFFS_BLOCK-1){
+			if(block==OFFS_BLOCK){
 				if(oblk==NULLOFF) dblk=NULLOFF;
 				else dblk=((offblock*)O2P(oblk*BLKSZ))->blocks[block=0];
 			}else dblk=offs->blocks[block];
@@ -190,7 +190,32 @@ int main()
 	
 	//nodetbl[1].mode=DIRMODE;
 	printf("%ld\n",dirmod(fsptr,0,"devolo",1,NULL));
-	nodetbl[2].mode=DIRMODE;
+	nodetbl[1].mode=DIRMODE;
+	printf("%ld\n",dirmod(fsptr,1,"a",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"b",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"c",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"d",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"e",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"f",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"g",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"h",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"i",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"j",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"k",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"l",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"m",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"n",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"o",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"p",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"q",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"r",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"s",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"t",2,NULL));
+	printf("%ld\n",dirmod(fsptr,1,"u",2,NULL));
+	nodetbl[1].mode=FILEMODE;
+	nodetbl[1].size*=sizeof(direntry);
+	printfs(fsptr);
+	printf("resize: %d\n",frealloc(fsptr,1,1*1024));
 	//printf("%ld\n",dirmod(fsptr,0,"dev",1,NULL));
 	//printf("%ld\n",dirmod(fsptr,0,"etc",2,NULL));
 	/*printf("%ld\n",dirmod(fsptr,0,"tty0",2,NULL));

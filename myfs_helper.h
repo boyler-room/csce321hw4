@@ -92,7 +92,7 @@
 #define NAMELEN		(256-sizeof(nodei))
 #define NODES_BLOCK	(BLKSZ/sizeof(inode))
 #define FILES_DIR	(BLKSZ/sizeof(direntry))
-#define OFFS_BLOCK	(BLKSZ/sizeof(blkset))
+#define OFFS_BLOCK	(BLKSZ/sizeof(blkset)-1)
 #define OFFS_NODE	5
 #define BLOCKS_FILE	4
 
@@ -117,7 +117,7 @@ typedef struct{
 } direntry;
 typedef struct{
 	blkset next;
-	blkset blocks[OFFS_BLOCK-1];
+	blkset blocks[OFFS_BLOCK];
 } offblock;
 typedef struct{
 	mode_t mode;
@@ -144,7 +144,7 @@ typedef struct{
 } fsheader;
 
 sz_blk blkalloc(void *fsptr, sz_blk count, blkset *buf);
-void blkfree(void *fsptr, sz_blk count, blkset *buf);
+sz_blk blkfree(void *fsptr, sz_blk count, blkset *buf);
 nodei newnode(void *fsptr);
 int nodevalid(void *fsptr, nodei node);
 void loadpos(void *fsptr, fpos *pos, nodei node);
