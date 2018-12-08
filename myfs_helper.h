@@ -5,8 +5,13 @@
 /*Helper Constants
 	O2P
 	P2O
+	CLDV
+	MIN
 	FILEMODE
 	DIRMODE
+	NODEI_BAD
+	NODEI_GOOD
+	NODEI_LINKD
 	NULLOFF
 	NONODE
 	BLKSZ
@@ -17,7 +22,7 @@
 	OFFS_BLOCK
 */
 /*Helper Types
-	index
+	blkdex
 	nodei
 	offset
 	blkset
@@ -45,17 +50,12 @@
 	fsinit
 */
 
-//BLKSZ%sizeof(direntry), BLKSZ%sizeof(inode) must be 0
-//sizeof(offblock) must be BLKSZ
-//sizeof(fsheader) must be <= sizeof(node)
-
 //file size is #bytes requested
 //file nblocks is #blocks of data
 //dir size is #bytes in direntries
 //dir nblocks is #blocks of dirfiles
 
 //new B2O,O2B to replace O2P on blksets?
-//merge nodegood,nodevalid: use range of return values to represent degree of validity
 //do not remove subdirs in dirmod if not empty?
 
 //ceiling(A/B)=(A+B-1)/B
@@ -75,9 +75,15 @@
 
 #define O2P(off)	(void*)((off)+fsptr)
 #define P2O(ptr)	(offset)((ptr)-fsptr)
+#define MIN(A,B)	((A<=B)?(A):(B))
+#define CLDIV(A,B)	((A+B-1)/B)
 
 #define FILEMODE	(S_IFREG|0755)
 #define DIRMODE		(S_IFDIR|0755)
+#define NODEI_BAD	0
+#define NODEI_GOOD	1
+#define NODEI_LINKD	2
+
 #define NULLOFF		(offset)0
 #define NONODE		(nodei)-1
 #define BLKSZ		(size_t)1024
@@ -88,7 +94,7 @@
 #define OFFS_NODE	5
 #define BLOCKS_FILE	4
 
-typedef size_t index;//list index
+typedef size_t blkdex;//list index
 typedef size_t offset;//byte offset
 typedef size_t blkset;//block offset
 typedef size_t sz_blk;//block size
@@ -98,9 +104,9 @@ typedef struct{
 	nodei node;//file node
 	sz_blk nblk;//block # in file
 	blkset oblk;//offset of offset block NULLOFF if in node.blocks
-	index opos;//index in offset block/node.blocks
+	blkdex opos;//index in offset block/node.blocks
 	blkset dblk;//offset of data block
-	index dpos;//byte of data in dblk for reg files, entry index for dirs 
+	blkdex dpos;//byte of data in dblk for reg files, entry index for dirs 
 	offset data;//offset to data
 } fpos;
 typedef struct{
@@ -135,16 +141,16 @@ typedef struct{
 	offset nodetbl;
 } fsheader;
 
-nodei newnode(void *fsptr);
-int nodegood(void *fsptr, nodei node);
-int nodevalid(void *fsptr, nodei node);
-void namepathset(char *name, const char *path);
-int namepatheq(char *name, const char *path);
-int fsinit(void *fsptr, size_t fssize);
 sz_blk blkalloc(void *fsptr, sz_blk count, blkset *buf);
 void blkfree(void *fsptr, sz_blk count, blkset *buf);
+nodei newnode(void *fsptr);
+int nodevalid(void *fsptr, nodei node);
 void loadpos(void *fsptr, fpos *pos, nodei node);
-off_t advance(void *fsptr, fpos *pos, sz_blk blk, off_t off);
+sz_blk advance(void *fsptr, fpos *pos, sz_blk blks);
+size_t seek(void *fsptr, fpos *pos, size_t off);
 int frealloc(void *fsptr, nodei node, off_t size);
+void namepathset(char *name, const char *path);
+int namepatheq(char *name, const char *path);
 nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *rename);
-nodei path2node(void *fsptr, const char *path, char **child);
+nodei path2node(void *fsptr, const char *path, const char **child);
+int fsinit(void *fsptr, size_t fssize);

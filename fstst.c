@@ -1,3 +1,7 @@
+/*CSCE321 HW4: myfs
+	fstst.c: debug/visualization and testing functions
+*/
+
 /*
 	Filesystem structure: [ node blocks | file blocks ]
 		Node blocks: [ fs header | node | ... ]
@@ -34,11 +38,11 @@
 		printdir() - print directory tree
 */
 
-#include "myfs_helper.h"
-
 #include <sys/mman.h>
 #define PAGE_SIZE	4096
 #define FS_PAGES	2
+
+#include "myfs_helper.h"
 
 //debug functions
 
@@ -53,7 +57,7 @@ void printdir(void *fsptr, nodei dir, size_t level)
 	inode *nodetbl=O2P(fshead->nodetbl);
 	blkset oblk=NULLOFF, dblk=nodetbl[dir].blocks[0];
 	direntry *df;
-	index block=0, entry=0;
+	blkdex block=0, entry=0;
 	fpos pos;
 	
 	loadpos(fsptr,&pos,dir);
@@ -63,7 +67,7 @@ void printdir(void *fsptr, nodei dir, size_t level)
 		for(int i=0;i<level;i++) printf("\t");
 		printf("%s(%ld)\n",df[pos.dpos].name,df[pos.dpos].node);
 		if(nodetbl[df[pos.dpos].node].mode==DIRMODE) printdir(fsptr,df[pos.dpos].node,level+1);
-		advance(fsptr,&pos,0,1);
+		seek(fsptr,&pos,1);
 	}
 	/*while(dblk!=NULLOFF){
 		df=(direntry*)O2P(dblk*BLKSZ);
@@ -99,8 +103,7 @@ void printnodes(void *fsptr)
 {
 	fsheader *fshead=fsptr;
 	inode *nodetbl=O2P(fshead->nodetbl);
-	size_t nodect;
-	index j,k;
+	size_t nodect,j,k;
 	nodei i;
 	
 	if(fshead->size==0) return;
@@ -111,10 +114,13 @@ void printnodes(void *fsptr)
 		printf("\tNode %ld, ",i);
 		if(nodetbl[i].nlinks){
 			blkset offb=nodetbl[i].blocklist;
-			if(nodetbl[i].mode==DIRMODE) printf("directory, ");
-			else if(nodetbl[i].mode==FILEMODE) printf("regular file, ");
+			size_t unit=1;
+			if(nodetbl[i].mode==DIRMODE){
+				printf("directory, ");
+				unit=sizeof(direntry);
+			}else if(nodetbl[i].mode==FILEMODE) printf("regular file, ");
 			else printf("mode not set, ");
-			printf("%ld links, %ld bytes in %ld blocks\n",nodetbl[i].nlinks,nodetbl[i].size,nodetbl[i].nblocks);
+			printf("%ld links, %ld bytes in %ld blocks\n",nodetbl[i].nlinks,nodetbl[i].size*unit,nodetbl[i].nblocks);
 			for(j=0;j<OFFS_NODE;j++){
 				if(nodetbl[i].blocks[j]==NULLOFF) break;
 				printf("\t\tBlock @ %ld in node list\n",nodetbl[i].blocks[j]);
@@ -172,7 +178,7 @@ int main()
 	size_t fssize = PAGE_SIZE*FS_PAGES;
 	void *fsptr = mmap(NULL, fssize, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 	if(fsptr==MAP_FAILED) return 1;
-	blkset b[4*FS_PAGES];
+	//blkset b[4*FS_PAGES];
 	fpos pos;
 
 	fsinit(fsptr, fssize);
@@ -182,12 +188,12 @@ int main()
 	
 	//nodetbl[1].mode=DIRMODE;
 	//printf("%ld\n",dirmod(fsptr,0,"devolo",1,NULL));
-	//nodetbl[2].mode=DIRMODE;
+	nodetbl[2].mode=DIRMODE;
 	//printf("%ld\n",dirmod(fsptr,0,"dev",1,NULL));
 	//printf("%ld\n",dirmod(fsptr,0,"etc",2,NULL));
-	/*printf("%ld\n",dirmod(fsptr,0,"tty0",2,NULL));
-	printf("%ld\n",dirmod(fsptr,0,"tty1",2,NULL));
-	printf("%ld\n",dirmod(fsptr,0,"tty2",2,NULL));
+	printf("%ld\n",dirmod(fsptr,0,"tty0",2,NULL));
+	printf("%ld\n",dirmod(fsptr,2,"tty1",1,NULL));
+	/*printf("%ld\n",dirmod(fsptr,0,"tty2",2,NULL));
 	printf("%ld\n",dirmod(fsptr,0,"tty3",2,NULL));
 	printf("%ld\n",dirmod(fsptr,0,"tty4",2,NULL));
 	printf("%ld\n",dirmod(fsptr,0,"tty5",2,NULL));
@@ -212,13 +218,13 @@ int main()
 	loadpos(fsptr,&pos,0);
 	//while(pos.data!=NULLOFF){
 		printpos(pos);
-		printf("advancement: %ld\n",advance(fsptr,&pos,0,nodetbl[0].size/sizeof(direntry)));
+		printf("advancement: %ld\n",advance(fsptr,&pos,0,nodetbl[0].size));
 	//}
 	printpos(pos);*/
 	
 	//printf("%ld\n",dirmod(fsptr,1,"input",2,NULL));
 	//printf("%ld\n",dirmod(fsptr,1,"input",0,""));
-	printfs(fsptr);
+	//printfs(fsptr);
 	/*printf("%ld\n",dirmod(fsptr,0,"dev",1,NULL));
 	printf("%ld\n",dirmod(fsptr,1,"craw",2,NULL));
 	printfs(fsptr);
@@ -233,7 +239,7 @@ int main()
 	printfs(fsptr);
 	printf("%ld\n",path2node(fsptr,"/dev",NULL));
 	printf("%ld\n",path2node(fsptr,"/jim",NULL));*/
-	//printdir(fsptr,0,0);
+	printdir(fsptr,0,0);
 	
 	munmap(fsptr, fssize);
 	return 0;
