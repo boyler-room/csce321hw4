@@ -57,7 +57,6 @@
 //dir size is #bytes in direntries
 //dir nblocks is #blocks of dirfiles
 
-//new B2O,O2B to replace O2P on blksets?
 //do not remove subdirs in dirmod if not empty?
 
 //ceiling(A/B)=(A+B-1)/B
@@ -77,6 +76,8 @@
 
 #define O2P(off)	(void*)((off)+fsptr)
 #define P2O(ptr)	(offset)((ptr)-fsptr)
+#define B2P(blk)	(void*)((blk)*BLKSZ+fsptr)
+#define P2B(ptr)	(blkset)(((ptr)-fsptr)/BLKSZ)
 #define MIN(A,B)	((A<=B)?(A):(B))
 #define CLDIV(A,B)	((A+B-1)/B)
 

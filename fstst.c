@@ -40,7 +40,7 @@
 
 #include <sys/mman.h>
 #define PAGE_SIZE	4096
-#define FS_PAGES	3
+#define FS_PAGES	1
 
 #include "myfs_helper.h"
 
@@ -174,6 +174,7 @@ void printfs(void *fsptr)
 void test_allocation();
 void test_dirmod();
 void test_path2node();
+void test_frealloc();
 
 int main()
 {
@@ -190,8 +191,8 @@ int main()
 	
 	//nodetbl[1].mode=DIRMODE;
 	printf("%ld\n",dirmod(fsptr,0,"devolo",1,NULL));
-	nodetbl[1].mode=DIRMODE;
-	printf("%ld\n",dirmod(fsptr,1,"a",2,NULL));
+	nodetbl[1].mode=FILEMODE;
+	/*printf("%ld\n",dirmod(fsptr,1,"a",2,NULL));
 	printf("%ld\n",dirmod(fsptr,1,"b",2,NULL));
 	printf("%ld\n",dirmod(fsptr,1,"c",2,NULL));
 	printf("%ld\n",dirmod(fsptr,1,"d",2,NULL));
@@ -213,9 +214,13 @@ int main()
 	printf("%ld\n",dirmod(fsptr,1,"t",2,NULL));
 	printf("%ld\n",dirmod(fsptr,1,"u",2,NULL));
 	nodetbl[1].mode=FILEMODE;
-	nodetbl[1].size*=sizeof(direntry);
+	nodetbl[1].size*=sizeof(direntry);*/
 	printfs(fsptr);
 	printf("resize: %d\n",frealloc(fsptr,1,1*1024));
+	printfs(fsptr);
+	printf("resize: %d\n",frealloc(fsptr,1,2*1024));
+	printfs(fsptr);
+	printf("resize: %d\n",frealloc(fsptr,1,0*1024));
 	//printf("%ld\n",dirmod(fsptr,0,"dev",1,NULL));
 	//printf("%ld\n",dirmod(fsptr,0,"etc",2,NULL));
 	/*printf("%ld\n",dirmod(fsptr,0,"tty0",2,NULL));
