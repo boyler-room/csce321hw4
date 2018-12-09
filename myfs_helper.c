@@ -310,37 +310,6 @@ size_t seek(void *fsptr, fpos *pos, size_t off)
 	}return (adv-bck);
 }
 
-/*
-	write: seek to offset
-	if past eof extend file to offset, zero
-	when write past end of last block, alloc new
-	memcpy whole blocks
-*/
-/*
-	if(nodetbl[node].mode!=FILEMODE) *errnoptr=EISDIR; return -1;
-	advance(fsptr,&pos,0,nodetbl[node].size);
-	if(pos.data==NULLOFF || count==0) return 0;
-	uh=BLKSZ-pos.dpos, if not start of blk (%BLKSZ?)
-	if(count<=uh) memcpy only count bytes, return count
-	br=(count-uh)/BLKSZ
-	oh=(count-uh)%BLKSZ
-	advance to start of next block
-	while(!eof && <br)
-		if block not full/last block
-			memcpy # in block
-			readct+=#
-			return readct
-		memcpy dblk
-		inc readct
-		dec br
-		advance to next block
-	if eof return readct
-	if last blk/not full && oh>avail
-		oh=avail
-	memcpy oh
-	readct+=oh
-	return readct
-*/
 //make sure size and nblocks always accurate, check dirmod, etc
 /*
 	if expanding
@@ -366,9 +335,9 @@ int frealloc(void *fsptr, nodei node, size_t size)
 	
 	loadpos(fsptr,&pos,node);
 	if(pos.node==NONODE || nodetbl[pos.node].mode==DIRMODE) return -1;
+	
 	blksize=CLDIV(size,BLKSZ);
 	blkdiff=blksize-nodetbl[node].nblocks;
-	
 	if(blkdiff<0){
 		sz_blk fct=0,adv=0;
 		offblock *offs;
@@ -400,14 +369,49 @@ int frealloc(void *fsptr, nodei node, size_t size)
 	}else if(size>nodetbl[node].size){
 		seek(fsptr,&pos,nodetbl[node].size);
 		if(pos.dblk!=NULLOFF && pos.dpos<BLKSZ){
-			memset(O2P(pos.dblk*BLKSZ+pos.dpos),0,BLKSZ-pos.dpos);
+			memset(O2P(pos.dblk*BLKSZ+pos.dpos),'!',BLKSZ-pos.dpos);
+		}if(blkdiff>0){
+			blkset *tblks;
+			sz_blk noblks;
+			if(blksize>=OFFS_NODE) return -1;
+			nodetbl[node].size=nodetbl[node].nblocks*BLKSZ;
+			seek(fsptr,&pos,BLKSZ);
+			/*if(pos.oblk==NULLOFF){
+				noblks=0;
+			}else{
+				noblks=0;
+			}if((tblks=(blkset*)malloc((blkdiff+noblks)*sizeof(blkset)))==NULL) return -1;//undo static size change
+			if(blkalloc(fsptr,blkdiff+noblks,tblks)<(blkdiff+noblks)){
+				blkfree(fsptr,blkdiff+noblks,tblks);
+				free(tblks);
+				//undo static size change
+				return -1;
+			}memcpy(&(nodetbl[node].blocks[pos.dpos]),tblks,blkdiff*sizeof(blkset));*/
+			
+			if(pos.oblk==NULLOFF){//nodelist
+				//place (MIN(OFFS_NODE,blkdiff)-pos.dpos) dblks in node list
+			}else{//first non-full oblk
+			}while(blkdiff>0){//pos to end of full oblk/nodelist, full dblk
+				offblock *offs;
+				if(pos.oblk==NULLOFF){//requires opos max
+					nodetbl[node].blocklist=tblks//advance tblks
+					//new oblk to blklist
+				}else{
+					offs=(offblock*)O2P(pos.oblk*BLKSZ);
+					offs.next=tblks//advance tblks
+					//new oblk to next
+				}if(blkdiff<=OFFS_BLOCK){//last oblk to fill
+				}
+				//if oblk full
+					//new oblk
+				//place MIN(OFFS_BLOCK,blkdiff) dblks into oblk
+				//inc size,nblocks
+				//dec blkdiff
+				seek(fsptr,,);
+				//advance to end/next
+			}
+			free(tblks);
 		}
-		//if/while blkdiff
-			//if oblk/nodelist full, new oblk
-			//new dblks
-			//update size
-			//advance to end
-		
 	
 	//if(blkdiff>=0){//need to allocate
 		//advance to eof
@@ -438,7 +442,7 @@ int frealloc(void *fsptr, nodei node, size_t size)
 		//while sdiff, alloc
 		//advance(fsptr,&pos,0,nodetbl[node].size)
 		//zero
-		return -1;
+		//return -1;
 	}nodetbl[node].nblocks=blksize;
 	nodetbl[node].size=size;
 	return 0;

@@ -697,11 +697,12 @@ int __myfs_open_implem(void *fsptr, size_t fssize, int *errnoptr, const char *pa
 
 */
 int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
-                       const char *path, char *buf, size_t size, off_t offset) {
+                       const char *path, char *buf, size_t size, off_t off) {
 	fsheader *fshead=fsptr;
 	inode *nodetbl;
 	nodei node;
 	fpos pos;
+	size_t readct=0;
 	
 	if(fsinit(fsptr,fssize)==-1){
 		*errnoptr=EFAULT;
@@ -711,7 +712,37 @@ int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
 	if((node=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}
+	}if(nodetbl[node].mode!=FILEMODE){
+		*errnoptr=EISDIR;
+		return -1;
+	}loadpos(fsptr,&pos,node);
+	seek(fsptr,&pos,off);
+	while(pos.data!=NULLOFF && readct<size){//TEMPORARY
+		buf[readct++]=((char*)O2P(pos.dblk*BLKSZ))[pos.dpos];
+		seek(fsptr,&pos,1);
+	}return readct;
+	/*
+	uh=BLKSZ-pos.dpos, if not start of blk (%BLKSZ?)
+	if(count<=uh) memcpy only count bytes, return count
+	br=(count-uh)/BLKSZ
+	oh=(count-uh)%BLKSZ
+	advance to start of next block
+	while(!eof && <br)
+		if block not full/last block
+			memcpy # in block
+			readct+=#
+			return readct
+		memcpy dblk
+		inc readct
+		dec br
+		advance to next block
+	if eof return readct
+	if last blk/not full && oh>avail
+		oh=avail
+	memcpy oh
+	readct+=oh
+	return readct
+*/
 	//check notdir
 	//loadpos(fsptr,node,&pos);
 	/*if(advance(fsptr,&pos,0,offset)<offset) return -1;
@@ -756,9 +787,19 @@ int __myfs_write_implem(void *fsptr, size_t fssize, int *errnoptr,
 		*errnoptr=ENOENT;
 		return -1;
 	}
-	/*
-		
-	*/
+/*
+	if offset>size: frealloc to offset
+	seek to offset
+	memcpy to last block
+	calc # blocks to expand in size
+	malloc blkset*
+	blkalloc to malloc'd, save actual
+	for alloc'd blocks
+		add to file
+		if out of spc
+			free remaining of blkalloc'd, free malloc'd
+		memcpy from buf
+*/
   /* STUB */
   return -1;
 }
