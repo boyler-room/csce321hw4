@@ -62,41 +62,13 @@ void printdir(void *fsptr, nodei dir, size_t level)
 	
 	loadpos(fsptr,&pos,dir);
 	while(pos.data!=NULLOFF){
-		df=(direntry*)O2P(pos.dblk*BLKSZ);
+		df=(direntry*)B2P(pos.dblk);
 		if(df[pos.dpos].node==NONODE) break;
 		for(int i=0;i<level;i++) printf("\t");
 		printf("%s(%ld)\n",df[pos.dpos].name,df[pos.dpos].node);
 		if(nodetbl[df[pos.dpos].node].mode==DIRMODE) printdir(fsptr,df[pos.dpos].node,level+1);
 		seek(fsptr,&pos,1);
 	}
-	/*while(dblk!=NULLOFF){
-		df=(direntry*)O2P(dblk*BLKSZ);
-		while(entry<FILES_DIR){
-			if(df[entry].node==NONODE) break;
-			for(int i=0;i<level;i++) printf("\t");
-			printf("%s(%ld)\n",df[entry].name,df[entry].node);
-			if(nodetbl[df[entry].node].mode==DIRMODE) printdir(fsptr,df[entry].node,level+1);
-			entry++;
-		}if(entry<FILES_DIR) break;
-		block++; entry=0;
-		if(oblk==NULLOFF){
-			if(block==OFFS_NODE){
-				oblk=nodetbl[dir].blocklist;
-				if(oblk==NULLOFF) dblk=NULLOFF;
-				else{
-					offblock *offs=O2P(oblk*BLKSZ);
-					dblk=offs->blocks[block=0];
-				}
-			}else dblk=nodetbl[dir].blocks[block];
-		}else{
-			offblock *offs=O2P(oblk*BLKSZ);
-			oblk=offs->next;
-			if(block==OFFS_BLOCK){
-				if(oblk==NULLOFF) dblk=NULLOFF;
-				else dblk=((offblock*)O2P(oblk*BLKSZ))->blocks[block=0];
-			}else dblk=offs->blocks[block];
-		}
-	}*/
 }
 
 void printnodes(void *fsptr)
@@ -125,7 +97,7 @@ void printnodes(void *fsptr)
 				if(nodetbl[i].blocks[j]==NULLOFF) break;
 				printf("\t\tBlock @ %ld in node list\n",nodetbl[i].blocks[j]);
 			}for(k=0;offb!=NULLOFF;k++){
-				offblock *oblk=O2P(offb*BLKSZ);
+				offblock *oblk=B2P(offb);
 				for(j=0;j<BLKSZ-1;j++){
 					if(oblk->blocks[j]==NULLOFF) break;
 					printf("\t\tBlock @ %ld in offset block %ld @ %ld\n",oblk->blocks[j],k,offb);
@@ -148,7 +120,7 @@ void printfree(void *fsptr)
 	fblkoff=fshead->freelist;
 	printf("\tFree: %ld bytes in %ld blocks, freelist @ block %ld\n",fshead->free*BLKSZ,fshead->free,fblkoff);
 	while(fblkoff!=NULLOFF){
-		frblk=(freereg*)O2P(fblkoff*BLKSZ);
+		frblk=(freereg*)B2P(fblkoff);
 		printf("\t\tfree region @ block %ld, with %ld blocks\n",fblkoff,frblk->size);
 		fblkoff=frblk->next;
 	}

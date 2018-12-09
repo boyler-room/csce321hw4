@@ -331,7 +331,8 @@ int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
 	blkset oblk, dblk;
 	nodei dir;
 	direntry *df;
-	size_t count, block=0, entry=0;
+	fpos pos;
+	size_t count=0;
 	char **namelist;
 	
 	if(fsinit(fsptr,fssize)==-1){
@@ -345,47 +346,24 @@ int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
 	}if(nodetbl[dir].mode!=DIRMODE){
 		*errnoptr=ENOTDIR;
 		return -1;
-	}
-	
-	oblk=NULLOFF;
-	dblk=nodetbl[dir].blocks[0];
-	count=nodetbl[dir].size/sizeof(direntry);
-	if((namelist=malloc(count*sizeof(char*)))==NULL){
+	}if((namelist=malloc(nodetbl[dir].size*sizeof(char*)))==NULL){
 		*errnoptr=EINVAL;
 		return -1;
-	}count=0;
+	}
 	
-	while(dblk!=NULLOFF){
-		df=(direntry*)O2P(dblk*BLKSZ);
-		while(entry<FILES_DIR){
-			if(df[entry].node==NONODE) break;
-			namelist[count]=(char*)malloc(strlen(df[entry].name));
-			if(namelist[count]==NULL){
-				while(count) free(namelist[--count]);
-				free(namelist);
-				*errnoptr=EINVAL;
-				return -1;
-			}strcpy(namelist[count],df[entry].name);
-			entry++; count++;
-		}if(entry<FILES_DIR) break;
-		block++; entry=0;
-		if(oblk==NULLOFF){
-			if(block==OFFS_NODE){
-				oblk=nodetbl[dir].blocklist;
-				if(oblk==NULLOFF) dblk=NULLOFF;
-				else{
-					offblock *offs=O2P(oblk*BLKSZ);
-					dblk=offs->blocks[block=0];
-				}
-			}else dblk=nodetbl[dir].blocks[block];
-		}else{
-			offblock *offs=O2P(oblk*BLKSZ);
-			oblk=offs->next;
-			if(block==OFFS_BLOCK){
-				if(oblk==NULLOFF) dblk=NULLOFF;
-				else dblk=((offblock*)O2P(oblk*BLKSZ))->blocks[block=0];
-			}else dblk=offs->blocks[block];
-		}
+	loadpos(fsptr,&pos,dir);
+	while(pos.data!=NULLOFF){
+		df=(direntry*)B2P(pos.dblk);
+		if(df[pos.dpos].node==NONODE) break;
+		namelist[count]=(char*)malloc(strlen(df[pos.dpos].name));
+		if(namelist[count]==NULL){
+			while(count) free(namelist[--count]);
+			free(namelist);
+			*errnoptr=EINVAL;
+			return -1;
+		}strcpy(namelist[count],df[pos.dpos].name);
+		count++;
+		seek(fsptr,&pos,1);
 	}*namesptr=namelist;
 	return count;
 }
@@ -718,7 +696,7 @@ int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
 	}loadpos(fsptr,&pos,node);
 	seek(fsptr,&pos,off);
 	while(pos.data!=NULLOFF && readct<size){//TEMPORARY
-		buf[readct++]=((char*)O2P(pos.dblk*BLKSZ))[pos.dpos];
+		buf[readct++]=((char*)B2P(pos.dblk))[pos.dpos];
 		seek(fsptr,&pos,1);
 	}return readct;
 	/*

@@ -81,7 +81,7 @@ TODO:
 	documentation
 	better errno use
 	review internal error cases
-	modify dirmod/readdir to use fpos struct
+	modify dirmod to use fpos struct
 	more efficient frealloc: memcpy from alloc arr to oblks; freeblk whole oblks
 	
 	frealloc
@@ -99,11 +99,11 @@ sz_blk blkalloc(void *fsptr, sz_blk count, blkset *buf)
 	sz_blk alloct=0;
 	
 	while(alloct<count && freeoff!=NULLOFF){
-		freereg fhead=*(freereg*)O2P(freeoff*BLKSZ);
+		freereg fhead=*(freereg*)B2P(freeoff);
 		sz_blk freeblk=0;
 		while(freeblk<(fhead.size) && alloct<count){
 			buf[alloct++]=freeoff+freeblk++;
-		}memset(O2P(freeoff*BLKSZ),0,freeblk*BLKSZ);
+		}memset(B2P(freeoff),0,freeblk*BLKSZ);
 		if(freeblk==(fhead.size)){
 			freeoff=fhead.next;
 			if(prev!=NULL) prev->next=fhead.next;
@@ -113,7 +113,7 @@ sz_blk blkalloc(void *fsptr, sz_blk count, blkset *buf)
 			freeoff+=freeblk;
 			if(prev!=NULL) prev->next=freeoff;
 			else fshead->freelist=freeoff;
-			prev=(freereg*)O2P(freeoff*BLKSZ);
+			prev=(freereg*)B2P(freeoff);
 			*prev=fhead;
 		}
 	}fshead->free-=alloct;
@@ -156,16 +156,16 @@ sz_blk blkfree(void *fsptr, sz_blk count, blkset *buf)
 	while(freect<count && *buf<(fshead->ntsize)){
 		*(buf++)=NULLOFF; count--;
 	}if(freect<count && ((freeoff==NULLOFF && *buf<fshead->size) || *buf<freeoff)){
-		fhead=(freereg*)O2P((freeoff=*buf)*BLKSZ);
+		fhead=(freereg*)B2P(freeoff=*buf);
 		fhead->next=fshead->freelist;
 		fshead->freelist=freeoff;
 		if((freeoff+(fhead->size=1))==fhead->next){
-			freereg *tmp=O2P(fhead->next*BLKSZ);
+			freereg *tmp=B2P(fhead->next);
 			fhead->size+=tmp->size;
 			fhead->next=tmp->next;
 		}buf[freect++]=NULLOFF;
 	}while(freect<count && buf[freect]<fshead->size){
-		fhead=(freereg*)O2P(freeoff*BLKSZ);
+		fhead=(freereg*)B2P(freeoff);
 		if(buf[freect]>=(freeoff+fhead->size)){
 			if(fhead->next!=NULLOFF && buf[freect]>=fhead->next){
 				freeoff=fhead->next;
@@ -173,13 +173,13 @@ sz_blk blkfree(void *fsptr, sz_blk count, blkset *buf)
 			}if(buf[freect]==(freeoff+fhead->size)){
 				fhead->size++;
 			}else{
-				freereg *tmp=O2P((freeoff=buf[freect])*BLKSZ);
+				freereg *tmp=B2P(freeoff=buf[freect]);
 				tmp->next=fhead->next;
 				tmp->size=1;
 				fhead->next=freeoff;
 				fhead=tmp;
 			}if((freeoff+fhead->size)==fhead->next){
-				freereg *tmp=O2P(fhead->next*BLKSZ);
+				freereg *tmp=B2P(fhead->next);
 				fhead->size+=tmp->size;
 				fhead->next=tmp->next;
 			}buf[freect++]=NULLOFF;
@@ -257,18 +257,18 @@ sz_blk advance(void *fsptr, fpos *pos, sz_blk blks)
 		if(pos->oblk==NULLOFF){
 			if(opos==OFFS_NODE){
 				if((pos->oblk=nodetbl[pos->node].blocklist)==NULLOFF) break;
-				offblock *offs=O2P(pos->oblk*BLKSZ);
+				offblock *offs=B2P(pos->oblk);
 				pos->dblk=offs->blocks[opos=0];
 			}else{
 				if(nodetbl[pos->node].blocks[opos]==NULLOFF) break;
 				pos->dblk=nodetbl[pos->node].blocks[opos];
 			}
 		}else{
-			offblock *offs=O2P(pos->oblk*BLKSZ);
+			offblock *offs=B2P(pos->oblk);
 			if(opos==OFFS_BLOCK){
 				if(offs->next==NULLOFF) break;
 				pos->oblk=offs->next;
-				offs=(offblock*)O2P(pos->oblk*BLKSZ);
+				offs=(offblock*)B2P(pos->oblk);
 				pos->dblk=offs->blocks[opos=0];
 			}else{
 				if(offs->blocks[opos]==NULLOFF) break;
@@ -350,7 +350,7 @@ int frealloc(void *fsptr, nodei node, size_t size)
 			}blkfree(fsptr,1,&(nodetbl[node].blocklist));
 		}else{
 			advance(fsptr,&pos,blksize-1);
-			offs=(offblock*)O2P(pos.oblk*BLKSZ);
+			offs=(offblock*)B2P(pos.oblk);
 			advance(fsptr,&pos,1);
 			if(pos.opos>0){
 				blkset prev=pos.oblk;
@@ -359,7 +359,7 @@ int frealloc(void *fsptr, nodei node, size_t size)
 				blkfree(fsptr,fct,&(offs->blocks[OFFS_BLOCK-fct]));
 			}offs->next=NULLOFF;
 		}while(adv==fct){
-			offs=(offblock*)O2P(pos.oblk*BLKSZ);
+			offs=(offblock*)B2P(pos.oblk);
 			blkset prev=pos.oblk;
 			fct=OFFS_BLOCK;
 			adv=advance(fsptr,&pos,fct);
@@ -397,18 +397,18 @@ int frealloc(void *fsptr, nodei node, size_t size)
 				if(pos.oblk==NULLOFF){
 					if(pos.opos==OFFS_NODE){
 						nodetbl[node].blocklist=tblks[alloct++];
-						offs=(offblock*)O2P(nodetbl[node].blocklist*BLKSZ);
+						offs=(offblock*)B2P(nodetbl[node].blocklist);
 						pos.opos=0; pos.oblk=nodetbl[node].blocklist;
 						offs->blocks[0]=tblks[alloct];
 					}else{
 						nodetbl[node].blocks[pos.opos]=tblks[alloct];
 					}
 				}else{
-					offs=(offblock*)O2P(pos.oblk*BLKSZ);
+					offs=(offblock*)B2P(pos.oblk);
 					if(pos.opos==OFFS_BLOCK){
 						offs->next=tblks[alloct++];
 						pos.oblk=offs->next;
-						offs=(offblock*)O2P(offs->next*BLKSZ);
+						offs=(offblock*)B2P(offs->next);
 						pos.opos=0;
 					}offs->blocks[pos.opos]=tblks[alloct];
 				}alloct++;
@@ -420,7 +420,7 @@ int frealloc(void *fsptr, nodei node, size_t size)
 				ext=MIN(OFFS_NODE,blkdiff)-pos.opos;
 				if(ext>0) memcpy(&(nodetbl[node].blocks[pos.opos]),tblks,ext*sizeof(blkset));
 			}else{
-				offblock *offs=O2P(pos.oblk*BLKSZ);
+				offblock *offs=B2P(pos.oblk);
 				ext=MIN(OFFS_BLOCK,blkdiff)-pos.opos;
 				if(ext>0) memcpy(&(offs->blocks[pos.opos]),tblks,ext*sizeof(blkset));
 			}nodetbl[node].nblocks+=ext;
@@ -433,11 +433,11 @@ int frealloc(void *fsptr, nodei node, size_t size)
 				ext=MIN(OFFS_BLOCK,blkdiff);
 				if(pos.oblk==NULLOFF){
 					nodetbl[node].blocklist=tblks[alloct++];
-					offs=(offblock*)O2P(nodetbl[node].blocklist*BLKSZ);
+					offs=(offblock*)B2P(nodetbl[node].blocklist);
 				}else{
-					offs=(offblock*)O2P(pos.oblk*BLKSZ);
+					offs=(offblock*)B2P(pos.oblk);
 					offs->next=tblks[alloct++];
-					offs=(offblock*)O2P(offs->next*BLKSZ);
+					offs=(offblock*)B2P(offs->next);
 				}memcpy(offs->blocks,&tblks[alloct],ext*sizeof(blkset));
 				nodetbl[node].nblocks+=ext;
 				nodetbl[node].size=nodetbl[node].nblocks*BLKSZ;
@@ -601,7 +601,7 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 	
 	loadpos(fsptr,&pos,dir);	
 	while(pos.data!=NULLOFF){
-		df=(direntry*)O2P(pos.dblk*BLKSZ);
+		df=(direntry*)B2P(pos.dblk);
 		if(df[pos.dpos].node==NONODE) break;
 		if(node==NONODE && rename!=NULL && namepatheq(df[pos.dpos].name,rename)){
 			return NONODE;
@@ -620,18 +620,18 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 				if((oblk=nodetbl[dir].blocklist)==NULLOFF){
 					dblk=NULLOFF;
 				}else{
-					offblock *offs=O2P(oblk*BLKSZ);
+					offblock *offs=B2P(oblk);
 					dblk=offs->blocks[block=0];
 				}
 			}else dblk=nodetbl[dir].blocks[block];
 		}else{
-			offblock *offs=O2P(oblk*BLKSZ);
+			offblock *offs=B2P(oblk);
 			if(block==OFFS_BLOCK){
 				if(offs->next==NULLOFF) dblk=NULLOFF;
 				else{
 					prevo=oblk;
 					oblk=offs->next;
-					offs=(offblock*)O2P(oblk*BLKSZ);
+					offs=(offblock*)B2P(oblk);
 					dblk=offs->blocks[block=0];
 				}
 			}else dblk=offs->blocks[block];
@@ -658,7 +658,7 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 	if(*name=='\0' || (rename!=NULL && node==NONODE && *rename=='\0')) return NONODE;
 	
 	while(dblk!=NULLOFF){
-		df=(direntry*)O2P(dblk*BLKSZ);
+		df=(direntry*)B2P(dblk);
 		while(entry<FILES_DIR){
 			if(df[entry].node==NONODE) break;
 			if(node==NONODE && rename!=NULL && namepatheq(df[entry].name,rename)){
@@ -677,18 +677,18 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 				if((oblk=nodetbl[dir].blocklist)==NULLOFF){
 					dblk=NULLOFF;
 				}else{
-					offblock *offs=O2P(oblk*BLKSZ);
+					offblock *offs=B2P(oblk);
 					dblk=offs->blocks[block=0];
 				}
 			}else dblk=nodetbl[dir].blocks[block];
 		}else{
-			offblock *offs=O2P(oblk*BLKSZ);
+			offblock *offs=B2P(oblk);
 			if(block==OFFS_BLOCK){
 				if(offs->next==NULLOFF) dblk=NULLOFF;
 				else{
 					prevo=oblk;
 					oblk=offs->next;
-					offs=(offblock*)O2P(oblk*BLKSZ);
+					offs=(offblock*)B2P(oblk);
 					dblk=offs->blocks[block=0];
 				}
 			}else dblk=offs->blocks[block];
@@ -707,10 +707,10 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 			if(oblk==NULLOFF){
 				dblk=nodetbl[dir].blocks[--block];
 			}else{
-				offblock *offs=O2P(oblk*BLKSZ);
+				offblock *offs=B2P(oblk);
 				dblk=offs->blocks[--block];
 			}entry=FILES_DIR-1;
-		}df=(direntry*)O2P(dblk*BLKSZ);
+		}df=(direntry*)B2P(dblk);
 		found->node=df[entry].node;
 		namepathset(found->name,df[entry].name);
 		df[entry].node=NONODE;
@@ -718,13 +718,13 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 			if(oblk==NULLOFF){
 				blkfree(fsptr,1,&(nodetbl[dir].blocks[block]));
 			}else{
-				offblock *offs=O2P(oblk*BLKSZ);
+				offblock *offs=B2P(oblk);
 				blkfree(fsptr,1,&(offs->blocks[block]));
 				if(block==0){
 					if(prevo==NULLOFF){
 						blkfree(fsptr,1,&(nodetbl[dir].blocklist));
 					}else{
-						offs=(offblock*)O2P(prevo*BLKSZ);
+						offs=(offblock*)B2P(prevo);
 						blkfree(fsptr,1,&(offs->next));
 					}
 				}
@@ -745,7 +745,7 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 					blkfree(fsptr,1,&oblk);
 					return NONODE;
 				}nodetbl[dir].blocklist=oblk;
-				offs=(offblock*)O2P(oblk*BLKSZ);
+				offs=(offblock*)B2P(oblk);
 				offs->blocks[0]=dblk;
 				offs->blocks[1]=NULLOFF;
 				offs->next=NULLOFF;
@@ -757,7 +757,7 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 				if(block<OFFS_NODE-1) nodetbl[dir].blocks[block+1]=NULLOFF;
 			}
 		}else{
-			offs=(offblock*)O2P(oblk*BLKSZ);
+			offs=(offblock*)B2P(oblk);
 			if(block==OFFS_BLOCK){
 				if(blkalloc(fsptr,1,&oblk)==0){
 					//errno
@@ -767,7 +767,7 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 					blkfree(fsptr,1,&oblk);
 					return NONODE;
 				}offs->next=oblk;
-				offs=(offblock*)O2P(oblk*BLKSZ);
+				offs=(offblock*)B2P(oblk);
 				offs->next=NULLOFF;
 				block=0;
 			}else{
@@ -778,7 +778,7 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 			}offs->blocks[block]=dblk;
 			offs->blocks[1]=NULLOFF;
 		}nodetbl[dir].nblocks++;
-		df=(direntry*)O2P(dblk*BLKSZ);
+		df=(direntry*)B2P(dblk);
 	}nodetbl[dir].size++;
 	df[entry].node=node;
 	namepathset(df[entry].name,name);
@@ -789,8 +789,6 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 
 nodei path2node(void *fsptr, const char *path, const char **child)
 {
-	fsheader *fshead=fsptr;
-	//inode *nodetbl=O2P(fshead->nodetbl);
 	nodei node=0;
 	size_t sub=1, ch=1;
 	
@@ -823,7 +821,7 @@ int fsinit(void *fsptr, size_t fssize)
 	fshead->freelist=fshead->ntsize;
 	fshead->free=fssize/BLKSZ-fshead->ntsize;
 	
-	fhead=(freereg*)O2P(fshead->freelist*BLKSZ);
+	fhead=(freereg*)B2P(fshead->freelist);
 	fhead->size=fshead->free;
 	fhead->next=NULLOFF;
 	
