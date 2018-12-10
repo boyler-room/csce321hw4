@@ -219,112 +219,32 @@
 
 #include "myfs_helper.h"
 
-void printpos(fpos pos)
-{
-	printf("Position %ld[%ld]->%ld[%ld]->%ld in block %ld of node %ld\n",pos.oblk,pos.opos,pos.dblk,pos.dpos,pos.data,pos.nblk,pos.node);
-}
-
-void printdir(void *fsptr, nodei dir, size_t level)
-{
-	fsheader *fshead=fsptr;
-	inode *nodetbl=O2P(fshead->nodetbl);
-	blkset oblk=NULLOFF, dblk=nodetbl[dir].blocks[0];
-	direntry *df;
-	blkdex block=0, entry=0;
-	fpos pos;
-	
-	loadpos(fsptr,&pos,dir);
-	while(pos.data!=NULLOFF){
-		df=(direntry*)B2P(pos.dblk);
-		if(df[pos.dpos].node==NONODE) break;
-		for(int i=0;i<level;i++) printf("\t");
-		printf("%s(%ld)\n",df[pos.dpos].name,df[pos.dpos].node);
-		if(nodetbl[df[pos.dpos].node].mode==DIRMODE) printdir(fsptr,df[pos.dpos].node,level+1);
-		seek(fsptr,&pos,1);
-	}
-}
-
-void printnodes(void *fsptr)
-{
-	fsheader *fshead=fsptr;
-	inode *nodetbl=O2P(fshead->nodetbl);
-	size_t nodect,j,k;
-	nodei i;
-	
-	if(fshead->size==0) return;
-	
-	nodect=(fshead->ntsize*NODES_BLOCK)-1;
-	printf("Node table of %ld blocks with %ld entries\n",fshead->ntsize,nodect);
-	for(i=0;i<nodect;i++){
-		printf("\tNode %ld, ",i);
-		if(nodetbl[i].nlinks){
-			blkset offb=nodetbl[i].blocklist;
-			size_t unit=1;
-			if(nodetbl[i].mode==DIRMODE){
-				printf("directory, ");
-				unit=sizeof(direntry);
-			}else if(nodetbl[i].mode==FILEMODE) printf("regular file, ");
-			else printf("mode not set, ");
-			printf("%ld links, %ld bytes in %ld blocks\n",nodetbl[i].nlinks,nodetbl[i].size*unit,nodetbl[i].nblocks);
-			for(j=0;j<OFFS_NODE;j++){
-				if(nodetbl[i].blocks[j]==NULLOFF) break;
-				printf("\t\tBlock @ %ld in node list\n",nodetbl[i].blocks[j]);
-			}for(k=0;offb!=NULLOFF;k++){
-				offblock *oblk=B2P(offb);
-				for(j=0;j<BLKSZ-1;j++){
-					if(oblk->blocks[j]==NULLOFF) break;
-					printf("\t\tBlock @ %ld in offset block %ld @ %ld\n",oblk->blocks[j],k,offb);
-				}offb=oblk->next;
-			}
-		}else{
-			printf("empty\n");
-		}
-	}
-}
-
-void printfree(void *fsptr)
-{
-	fsheader *fshead=fsptr;
-	freereg *frblk;
-	blkset fblkoff;
-	
-	if(fshead->size==0) return;
-	
-	fblkoff=fshead->freelist;
-	printf("\tFree: %ld bytes in %ld blocks, freelist @ block %ld\n",fshead->free*BLKSZ,fshead->free,fblkoff);
-	while(fblkoff!=NULLOFF){
-		frblk=(freereg*)B2P(fblkoff);
-		printf("\t\tfree region @ block %ld, with %ld blocks\n",fblkoff,frblk->size);
-		fblkoff=frblk->next;
-	}
-}
-
-void printfs(void *fsptr)
-{
-	fsheader *fshead=fsptr;
-	
-	printf("Filesystem @%p\n",fsptr);
-	if(fshead->size==0){
-		printf("\tempty\n");
-		return;
-	}printf("\tSize:%ld bytes in %ld %ld byte blocks\n",fshead->size*BLKSZ,fshead->size,BLKSZ);
-	printfree(fsptr);
-	printnodes(fsptr);
-	printf("/(0)\n");
-	printdir(fsptr,0,1);
-}
-
 /*Implementation Details
+	Filesystem layout
+		[ global header | root inode | ... inodes ... ] [ node table blocks ]... [ data blocks ]...
+	File layout
+		node{ first n data offsets }->first offset block{ next m data offsets }->...
+	Directory layout
+		{ file0[node,name] file1[node,name] ... } ... { file_n[node,name] file_n+1[node,name] ... }
 	
+	Block sizes were chosen to be 1024 bytes, as this is a common block size, is smaller than the page size, and is 		big enough to contain most small files
+	Names are given a fixed length to reduce complexity, and the length is such that a directory entry is 256 bytes
+		when/if a longer name is given, the name will be truncated to the fixed length
+	The number of Inodes allocated to the filesystem is calculated so there are at least as many nodes as there
+		is space for the number of 4k files that can fit after the node table
+	Inodes store the same data for files as for directories, only sizes are interpreted differently,
+		and the mode is set appropriately to distinguish between them
+	No empty offset, data, or directory blocks are allocated, empty dirs and files of size 0 have 0 blocks
+	Free blocks are stored in a linked list and grouped into contiguous regions
+	Testing was done similarly to HW3, using a separate file to test helper functions before working with FUSE
+	Valgrind was used to check for memory leaks and seemed to find none, though some were reported and appear to
+		result from FUSE
+	Certain functions were implemented inefficiently near the deadline and perfom noticably slowly under load,
+		notably frealloc, as used for truncates
+	The helper functions are implemented in the separate file myfs_helper.c, and filesystem types and definintions
+		are in myfs_helper.h
+	A makefile was made to build the project, with targets default(fuse version), debug(for gdb), and test(fstst.c)
 */
-/*Implementation Decisions
-	Fixed length file names
-		truncation
-	Node table size
-	directories as files
-	offsets/node/offset blocks
-*/
-
 
 /* FUSE Function Implementations */
 
@@ -362,10 +282,8 @@ int __myfs_getattr_implem(void *fsptr, size_t fssize, int *errnoptr,
 	nodei node;
 	size_t unit=1;
 	
-	if(fsinit(fsptr,fssize)==-1){
-		*errnoptr=EFAULT;
-		return -1;
-	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	fsinit(fsptr,fssize);
+	nodetbl=(inode*)O2P(fshead->nodetbl);
 	
 	if((node=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
@@ -426,13 +344,12 @@ int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
 	direntry *df;
 	nodei dir;
 	fpos pos;
+	struct timespec access;
 	size_t count=0;
 	char **namelist;
 	
-	if(fsinit(fsptr,fssize)==-1){
-		*errnoptr=EFAULT;
-		return -1;
-	}nodetbl=O2P(fshead->nodetbl);
+	fsinit(fsptr,fssize);
+	nodetbl=O2P(fshead->nodetbl);
 	
 	if((dir=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
@@ -444,6 +361,9 @@ int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
 		*errnoptr=EINVAL;
 		return -1;
 	}
+	
+	timespec_get(&access,TIME_UTC);
+	nodetbl[dir].atime=access;
 	
 	loadpos(fsptr,&pos,dir);
 	while(pos.data!=NULLOFF){
@@ -482,14 +402,12 @@ int __myfs_readdir_implem(void *fsptr, size_t fssize, int *errnoptr,
 int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
 	fsheader *fshead=fsptr;
 	inode *nodetbl;
-	struct timespec creation;
 	nodei pnode, node;
+	struct timespec creation;
 	const char *fname;
 	
-	if(fsinit(fsptr,fssize)==-1){
-		*errnoptr=EFAULT;
-		return -1;
-	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	fsinit(fsptr,fssize);
+	nodetbl=(inode*)O2P(fshead->nodetbl);
 	
 	if((pnode=path2node(fsptr,path,&fname))==NONODE){
 		*errnoptr=ENOENT;
@@ -497,14 +415,12 @@ int __myfs_mknod_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	}if((node=newnode(fsptr))==NONODE){
 		*errnoptr=ENOSPC;
 		return -1;
-	}if(timespec_get(&creation,TIME_UTC)!=TIME_UTC){
-		*errnoptr=EACCES;
-		return -1;
 	}if(dirmod(fsptr,pnode,fname,node,NULL)==NONODE){
 		*errnoptr=EEXIST;
 		return -1;
 	}
 	
+	timespec_get(&creation,TIME_UTC);
 	nodetbl[node].mode=FILEMODE;
 	nodetbl[node].ctime=creation;
 	nodetbl[node].mtime=creation;
@@ -529,10 +445,8 @@ int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr, const char *
 	nodei pnode, node;
 	const char *fname;
 	
-	if(fsinit(fsptr,fssize)==-1){
-		*errnoptr=EFAULT;
-		return -1;
-	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	fsinit(fsptr,fssize);
+	nodetbl=(inode*)O2P(fshead->nodetbl);
 	
 	if((pnode=path2node(fsptr,path,&fname))==NONODE){
 		*errnoptr=ENOENT;
@@ -561,15 +475,10 @@ int __myfs_unlink_implem(void *fsptr, size_t fssize, int *errnoptr, const char *
 
 */
 int __myfs_rmdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
-	fsheader *fshead=fsptr;
-	inode *nodetbl;
-	nodei pnode, node;
+	nodei pnode;
 	const char *fname;
 	
-	if(fsinit(fsptr,fssize)==-1){
-		*errnoptr=EFAULT;
-		return -1;
-	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	fsinit(fsptr,fssize);
 	
 	if((pnode=path2node(fsptr,path,&fname))==NONODE){
 		*errnoptr=ENOENT;
@@ -599,10 +508,8 @@ int __myfs_mkdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	nodei pnode, node;
 	const char *fname;
 	
-	if(fsinit(fsptr,fssize)==-1){
-		*errnoptr=EFAULT;
-		return -1;
-	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	fsinit(fsptr,fssize);
+	nodetbl=(inode*)O2P(fshead->nodetbl);
 
 	if((pnode=path2node(fsptr,path,&fname))==NONODE){
 		*errnoptr=ENOENT;
@@ -610,14 +517,12 @@ int __myfs_mkdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 	}if((node=newnode(fsptr))==NONODE){
 		*errnoptr=ENOSPC;
 		return -1;
-	}if(timespec_get(&creation,TIME_UTC)!=TIME_UTC){
-		*errnoptr=EACCES;
-		return -1;
 	}if(dirmod(fsptr,pnode,fname,node,NULL)==NONODE){
 		*errnoptr=EEXIST;
 		return -1;
 	}
-	
+
+	timespec_get(&creation,TIME_UTC);
 	nodetbl[node].mode=DIRMODE;
 	nodetbl[node].ctime=creation;
 	nodetbl[node].mtime=creation;
@@ -643,13 +548,15 @@ int __myfs_mkdir_implem(void *fsptr, size_t fssize, int *errnoptr, const char *p
 int __myfs_rename_implem(void *fsptr, size_t fssize, int *errnoptr,
                          const char *from, const char *to) {
 	fsheader *fshead=fsptr;
+	inode *nodetbl;
 	nodei pfrom, pto, file;
+	struct timespec modify;
 	const char *ffrom, *fto;
 	
-	if(fsinit(fsptr,fssize)==-1){
-		*errnoptr=EFAULT;
-		return -1;
-	}if((pfrom=path2node(fsptr,from,&ffrom))==NONODE){
+	fsinit(fsptr,fssize);
+	nodetbl=(inode*)O2P(fshead->nodetbl);
+	
+	if((pfrom=path2node(fsptr,from,&ffrom))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
 	}if((pto=path2node(fsptr,to,&fto))==NONODE){
@@ -659,6 +566,9 @@ int __myfs_rename_implem(void *fsptr, size_t fssize, int *errnoptr,
 		*errnoptr=ENOENT;
 		return -1;
 	}
+	
+	timespec_get(&modify,TIME_UTC);
+	nodetbl[file].mtime=modify;
 	
 	if(pto==pfrom){
 		if(dirmod(fsptr,pfrom,ffrom,NONODE,fto)==NONODE){
@@ -696,19 +606,25 @@ int __myfs_rename_implem(void *fsptr, size_t fssize, int *errnoptr,
 int __myfs_truncate_implem(void *fsptr, size_t fssize, int *errnoptr,
                            const char *path, off_t offset) {
 	fsheader *fshead=fsptr;
+	inode *nodetbl;
 	nodei node;
+	struct timespec modify;
 	
-	if(fsinit(fsptr,fssize)==-1){
-		*errnoptr=EFAULT;
-		return -1;
-	}
-	printf("TRUNCATE CALL\n");
-	printfs(fsptr);
+	fsinit(fsptr,fssize);
+	nodetbl=(inode*)O2P(fshead->nodetbl);
 	
 	if((node=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}if(frealloc(fsptr,node,offset)==-1){
+	}if(nodetbl[node].mode!=FILEMODE){
+		*errnoptr=EISDIR;
+		return -1;
+	}
+	
+	timespec_get(&modify,TIME_UTC);
+	nodetbl[node].mtime=modify;
+	
+	if(frealloc(fsptr,node,offset)==-1){
 		*errnoptr=EPERM;
 		return -1;
 	}return 0;
@@ -742,14 +658,21 @@ int __myfs_truncate_implem(void *fsptr, size_t fssize, int *errnoptr,
 */
 int __myfs_open_implem(void *fsptr, size_t fssize, int *errnoptr, const char *path) {
 	fsheader *fshead=fsptr;
+	inode *nodetbl;
+	nodei node;
+	struct timespec access;
 	
-	if(fsinit(fsptr,fssize)==-1){
-		*errnoptr=EFAULT;
-		return -1;
-	}if(path2node(fsptr,path,NULL)==NONODE){
+	fsinit(fsptr,fssize);
+	nodetbl=(inode*)O2P(fshead->nodetbl);
+	
+	if((node=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}return 0;
+	}
+	
+	timespec_get(&access,TIME_UTC);
+	nodetbl[node].atime=access;
+	return 0;
 }
 
 /* Implements an emulation of the read system call on the filesystem 
@@ -769,6 +692,9 @@ int __myfs_open_implem(void *fsptr, size_t fssize, int *errnoptr, const char *pa
 */
 int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
                        const char *path, char *buf, size_t size, off_t off) {
+	struct timespec access;
+	timespec_get(&access,TIME_UTC);
+	nodetbl[node].atime=access;
    fsheader *fshead=fsptr;
    inode *nodetbl;
    nodei node;
@@ -779,8 +705,6 @@ int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
       *errnoptr=EFAULT;
       return -1;
    }nodetbl=(inode*)O2P(fshead->nodetbl);
-   printf("READ CALL\n");
-   printfs(fsptr);
    
    if((node=path2node(fsptr,path,NULL))==NONODE){
       *errnoptr=ENOENT;
@@ -790,20 +714,12 @@ int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
       return -1;
    }if(size==0) return 0;
 
-    if(off>=nodetbl[node].size){ 
-   //    size_t offsize=MIN((off+BLKSZ-1)*BLKSZ,(off+size));
-      printf("off >= node.size");
-    }
    while(pos.data!=NULLOFF && readct<size){
-      printf("...\n");
       char* blk=B2P(pos.dblk);
       buf[readct++]=blk[pos.dpos];
       seek(fsptr,&pos,1);
    }printf("%ld bytes to go\n",size-writect);
    while(react<size){
-      if(pos.data==NULLOFF){
-         printf("pos.data == NULLOFF");
-      }
       loadpos(fsptr,&pos,node);
       seek(fsptr,&pos,off+readct);
       char* blk=B2P(pos.dblk);
@@ -815,50 +731,8 @@ int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
    loadpos(fsptr,&pos,node);
    seek(fsptr,&pos,off);
 
-   printf("name: %s, node: %ld\n",path,node);
-   readct=0;
-   while(readct<size){
-      printf("%c",buf[readct++]);
-   }printf("\n");
    return readct;
 
-   // while(pos.data!=NULLOFF && readct<size){//TEMPORARY
-   //    buf[readct++]=((char*)B2P(pos.dblk))[pos.dpos];
-   //    seek(fsptr,&pos,1);
-   // }return readct;
-
-   /*
-   uh=BLKSZ-pos.dpos, if not start of blk (%BLKSZ?)
-   if(count<=uh) memcpy only count bytes, return count
-   br=(count-uh)/BLKSZ
-   oh=(count-uh)%BLKSZ
-   advance to start of next block
-   while(!eof && <br)
-      if block not full/last block
-         memcpy # in block
-         readct+=#
-         return readct
-      memcpy dblk
-      inc readct
-      dec br
-      advance to next block
-   if eof return readct
-   if last blk/not full && oh>avail
-      oh=avail
-   memcpy oh
-   readct+=oh
-   return readct
-*/
-   //check notdir
-   //loadpos(fsptr,node,&pos);
-   /*if(advance(fsptr,&pos,0,offset)<offset) return -1;
-   while !eof && count<size
-      copy byte to buffer
-      inc count
-      advance
-   return count
-   */
-  /* STUB */
   return -1;
 }
 
@@ -883,23 +757,26 @@ int __myfs_write_implem(void *fsptr, size_t fssize, int *errnoptr,
 	inode *nodetbl;
 	nodei node;
 	fpos pos;
-	size_t writect=0, nblks;
+	struct timespec modify;
+	size_t writect=0;
 	
-	if(fsinit(fsptr,fssize)==-1){
-		*errnoptr=EFAULT;
-		return -1;
-	}nodetbl=(inode*)O2P(fshead->nodetbl);
-	printf("WRITE CALL: %ld bytes @ offset %ld\n",size,off);
-	printfs(fsptr);
+	fsinit(fsptr,fssize);
+	nodetbl=(inode*)O2P(fshead->nodetbl);
 	
 	if((node=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
 		return -1;
-	}if(size==0) return 0;
+	}if(nodetbl[node].mode!=FILEMODE){
+		*errnoptr=EISDIR;
+		return -1;
+	}
 	
+	timespec_get(&modify,TIME_UTC);
+	nodetbl[node].mtime=modify;
+	
+	if(size==0) return 0;	
 	if(off>=nodetbl[node].size){
 		size_t offsize=MIN(((off+BLKSZ-1)/BLKSZ)*BLKSZ,(off+size));
-		printf("start size: %ld from %ld past %ld\n",offsize,off,nodetbl[node].size);
 		if(frealloc(fsptr,node,MIN(offsize,(off+size)))==-1){
 			*errnoptr=EINVAL;
 			return -1;
@@ -907,46 +784,19 @@ int __myfs_write_implem(void *fsptr, size_t fssize, int *errnoptr,
 	}loadpos(fsptr,&pos,node);
 	seek(fsptr,&pos,off);
 	while(pos.data!=NULLOFF && writect<size){
-		printf("...\n");
 		char* blk=B2P(pos.dblk);
 		blk[pos.dpos]=buf[writect++];
 		seek(fsptr,&pos,1);
-	}printf("%ld bytes to go\n",size-writect);
-	while(writect<size){
+	}while(writect<size){
 		if(pos.data==NULLOFF){
 			size_t extsize=MIN((off+size),(nodetbl[node].nblocks+1)*BLKSZ);
-			printf("extend size: %ld past %ld\n",extsize,nodetbl[node].size);
 			if(frealloc(fsptr,node,extsize)==-1) break;
-		}
-		loadpos(fsptr,&pos,node);
+		}loadpos(fsptr,&pos,node);
 		seek(fsptr,&pos,off+writect);
 		char* blk=B2P(pos.dblk);
 		blk[pos.dpos]=buf[writect++];
 		seek(fsptr,&pos,1);
-	}printfs(fsptr);
-	/*
-		//calc # blocks past end needed
-		if>0
-			//malloc,blkalloc up to calc'd, save actual alloc'd
-			//for alloc'd blocks
-				copy data to blocks
-				insert blocks into file
-				on fail, free remaining blocks
-	*/
-	//update size
-	printf("name: %s, node: %ld\n",path,node);
-	writect=0;
-	while(writect<size){
-		printf("%c",buf[writect++]);
-	}printf("\n");
-	return writect;
-	/*
-	while(pos.data!=NULLOFF && writect<size){//TEMPORARY
-		printf("write: %c",buf[writect]);
-		
-	}return writect;*/
-  /* STUB */
-  return -1;
+	}return writect;
 }
 
 /* Implements an emulation of the utimensat system call on the filesystem 
@@ -968,10 +818,8 @@ int __myfs_utimens_implem(void *fsptr, size_t fssize, int *errnoptr,
 	inode *nodetbl;
 	nodei node;
 	
-	if(fsinit(fsptr,fssize)==-1){
-		*errnoptr=EFAULT;
-		return -1;
-	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	fsinit(fsptr,fssize);
+	nodetbl=(inode*)O2P(fshead->nodetbl);
 	
 	if((node=path2node(fsptr,path,NULL))==NONODE){
 		*errnoptr=ENOENT;
@@ -1010,10 +858,7 @@ int __myfs_statfs_implem(void *fsptr, size_t fssize, int *errnoptr,
                          struct statvfs* stbuf) {
 	fsheader *fshead=fsptr;
 	
-	if(fsinit(fsptr,fssize)==-1){
-		*errnoptr=EFAULT;
-		return -1;
-	}
+	fsinit(fsptr,fssize);
 	
 	stbuf->f_bsize=BLKSZ;
 	stbuf->f_blocks=fshead->size;
