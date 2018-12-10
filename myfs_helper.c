@@ -10,7 +10,8 @@
 	nodevalid
 	loadpos
 	advance
-	...
+	seek
+	frealloc
 	namepathset
 	namepatheq
 	dirmod
@@ -60,6 +61,7 @@ GOOD:
 	statfs
 	utimens
 	getattr
+	readdir
 ~OK:
 	fpos
 	fsheader
@@ -74,7 +76,6 @@ GOOD:
 	mknod
 	rmdir
 	unlink
-	readdir
 	truncate
 	rename
 TODO:
@@ -82,9 +83,7 @@ TODO:
 	better errno use
 	review internal error cases
 	modify dirmod to use fpos struct
-	more efficient frealloc: memcpy from alloc arr to oblks; freeblk whole oblks
-	
-	frealloc
+	more efficient frealloc: memcpy from alloc arr to oblks
 	
 	read
 	write
@@ -204,7 +203,13 @@ nodei newnode(void *fsptr)
 	size_t nodect=fshead->ntsize*NODES_BLOCK-1;
 	nodei i=0;
 	while(++i<nodect){
-		if(nodetbl[i].nlinks==0) return i;
+		if(nodetbl[i].nlinks==0){
+			nodetbl[i].size=0;
+			nodetbl[i].nblocks=0;
+			nodetbl[i].blocks[0]=NULLOFF;
+			nodetbl[i].blocklist=NULLOFF;
+			return i;
+		}
 	}return NONODE;
 }
 
@@ -224,7 +229,7 @@ void loadpos(void *fsptr, fpos *pos, nodei node)
 	inode *nodetbl=O2P(fshead->nodetbl);
 	
 	if(pos==NULL) return;
-	if(nodevalid(fsptr,node)<NODEI_GOOD){//NODEI_GOOD?
+	if(nodevalid(fsptr,node)<NODEI_GOOD){
 		pos->node=NONODE;
 		return;
 	}pos->node=node;
@@ -232,7 +237,7 @@ void loadpos(void *fsptr, fpos *pos, nodei node)
 	pos->opos=0;
 	pos->dpos=0;
 	pos->oblk=NULLOFF;
-	pos->dblk=*nodetbl[node].blocks;
+	pos->dblk=nodetbl[node].blocks[0];
 	pos->data=pos->dblk*BLKSZ;
 }
 
@@ -310,6 +315,49 @@ size_t seek(void *fsptr, fpos *pos, size_t off)
 	}return (adv-bck);
 }
 
+//expand a file blks blocks past eof
+/*sz_blk expand(void *fsptr, fpos *pos, sz_blk blks)
+{
+	fsheader *fshead=fsptr;
+	inode *nodetbl=O2P(fshead->nodetbl);
+	sz_blk adv=0;
+	size_t unit=1;
+	
+	if(pos==NULL || pos->node==NONODE || pos->data!=NULLOFF) return 0;
+	if(nodetbl[pos->node].mode==DIRMODE) unit=sizeof(direntry);
+	
+	if(pos->data==NULLOFF){
+		if(pos->dpos*unit==BLKSZ) pos->opos--;
+	}pos->dpos=0;
+	while(blks){
+		blkdex opos=pos->opos+1;
+		if(pos->oblk==NULLOFF){
+			if(opos==OFFS_NODE){
+				if((pos->oblk=nodetbl[pos->node].blocklist)==NULLOFF) break;
+				offblock *offs=B2P(pos->oblk);
+				pos->dblk=offs->blocks[opos=0];
+			}else{
+				if(nodetbl[pos->node].blocks[opos]==NULLOFF) break;
+				pos->dblk=nodetbl[pos->node].blocks[opos];
+			}
+		}else{
+			offblock *offs=B2P(pos->oblk);
+			if(opos==OFFS_BLOCK){
+				if(offs->next==NULLOFF) break;
+				pos->oblk=offs->next;
+				offs=(offblock*)B2P(pos->oblk);
+				pos->dblk=offs->blocks[opos=0];
+			}else{
+				if(offs->blocks[opos]==NULLOFF) break;
+				pos->dblk=offs->blocks[opos];
+			}
+		}pos->opos=opos;
+		adv++; blks--;
+	}pos->data=pos->dblk*BLKSZ;
+	pos->nblk+=adv;
+	return adv;
+}*/
+
 //make sure size and nblocks always accurate, check dirmod, etc
 /*
 	if expanding
@@ -363,14 +411,13 @@ int frealloc(void *fsptr, nodei node, size_t size)
 			blkset prev=pos.oblk;
 			fct=OFFS_BLOCK;
 			adv=advance(fsptr,&pos,fct);
-			printf("prv %ld, nxt %ld, adv %ld, eof %ld\n",prev,pos.oblk,adv,pos.data);
 			blkfree(fsptr,fct,offs->blocks);
 			blkfree(fsptr,1,&prev);
 		}
 	}else if(size>nodetbl[node].size){
 		seek(fsptr,&pos,nodetbl[node].size);
 		if(pos.dblk!=NULLOFF && pos.dpos<BLKSZ){
-			memset(O2P(pos.dblk*BLKSZ+pos.dpos),'!',BLKSZ-pos.dpos);
+			memset(O2P(pos.dblk*BLKSZ+pos.dpos),0,BLKSZ-pos.dpos);
 			pos.opos++;
 		}if(blkdiff>0){
 			blkset *tblks;
@@ -585,36 +632,81 @@ condition going into entry loop
 	 node	 NULL	 add the file name if it does not exist and link it to node, return node on success
 	 !NONODE !NULL	 find file name and remove it, unlink node and free if needed, return node on success
 */
-/*fpos implementation
-nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *rename)
+/*nodei dirmod2(void *fsptr, nodei dir, const char *name, nodei node, const char *rename)
 {
 	fsheader *fshead=fsptr;
 	inode *nodetbl=O2P(fshead->nodetbl);
 	direntry *df, *found=NULL;
-	blkset prevo=NULLOFF;
 	fpos pos;
 	
-	//update
-	if(nodevalid(fsptr,dir) || nodetbl[dir].mode!=DIRMODE) return NONODE;
-	if(node!=NONODE && rename==NULL && nodegood(fsptr,node)) return NONODE;
+	if(nodevalid(fsptr,dir)<NODEI_LINKD || nodetbl[dir].mode!=DIRMODE) return NONODE;
+	if(node!=NONODE && rename==NULL && nodevalid(fsptr,node)<NODEI_GOOD) return NONODE;
 	if(*name=='\0' || (rename!=NULL && node==NONODE && *rename=='\0')) return NONODE;
 	
 	loadpos(fsptr,&pos,dir);	
 	while(pos.data!=NULLOFF){
 		df=(direntry*)B2P(pos.dblk);
 		if(df[pos.dpos].node==NONODE) break;
-		if(node==NONODE && rename!=NULL && namepatheq(df[pos.dpos].name,rename)){
+		printf("%s\n",df[pos.dpos].name);
+		if(rename!=NULL && namepatheq(df[pos.dpos].name,rename)){
 			return NONODE;
 		}if(namepatheq(df[pos.dpos].name,name)){
 			if(rename!=NULL) found=&df[pos.dpos];
-			else{
-				if(node==NONODE) return df[pos.dpos].node;
-				else return NONODE;
-			}
-		}prevo=pos.oblk;
-		seek(fsptr,&pos,0,1);
-		//printf("prev: %ld, next: %ld, data: %ld\n",prevo,pos.opos,pos.data);
+			else return df[pos.dpos].node;
+		}seek(fsptr,&pos,1);
+	}if(node==NONODE){
+		if(rename!=NULL && found!=NULL){
+			namepathset(found->name,rename);
+			return found->node;
+		}return NONODE;
 	}
+
+	if(pos.data==NULLOFF){
+		offblock *offs;
+		if(pos.oblk==NULLOFF){
+			if(pos.opos==OFFS_NODE){
+				if(blkalloc(fsptr,1,&oblk)==0){
+					return NONODE;
+				}if(blkalloc(fsptr,1,&dblk)==0){
+					blkfree(fsptr,1,&oblk);
+					return NONODE;
+				}nodetbl[dir].blocklist=oblk;
+				offs=(offblock*)B2P(oblk);
+				offs->blocks[0]=dblk;
+				offs->blocks[1]=NULLOFF;
+				offs->next=NULLOFF;
+			}else{
+				if(blkalloc(fsptr,1,&dblk)==0){
+					return NONODE;
+				}nodetbl[dir].blocks[block]=dblk;
+				if(block<OFFS_NODE-1) nodetbl[dir].blocks[block+1]=NULLOFF;
+			}
+		}else{
+			offs=(offblock*)B2P(oblk);
+			if(block==OFFS_BLOCK){
+				if(blkalloc(fsptr,1,&oblk)==0){
+					return NONODE;
+				}if(blkalloc(fsptr,1,&dblk)==0){
+					blkfree(fsptr,1,&oblk);
+					return NONODE;
+				}offs->next=oblk;
+				offs=(offblock*)B2P(oblk);
+				offs->next=NULLOFF;
+				block=0;
+			}else{
+				if(blkalloc(fsptr,1,&dblk)==0){
+					return NONODE;
+				}
+			}offs->blocks[block]=dblk;
+			offs->blocks[1]=NULLOFF;
+		}nodetbl[dir].nblocks++;
+		df=(direntry*)B2P(dblk);
+	}nodetbl[dir].size++;
+	df[entry].node=node;
+	namepathset(df[entry].name,name);
+	nodetbl[node].nlinks++;
+	if(++entry<FILES_DIR) df[entry].node=NONODE;
+	return node;
 	/*	if(oblk==NULLOFF){
 			if(block==OFFS_NODE){
 				if((oblk=nodetbl[dir].blocklist)==NULLOFF){
@@ -637,12 +729,7 @@ nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *r
 			}else dblk=offs->blocks[block];
 		}
 	*//*
-	if(node==NONODE){
-		if(rename!=NULL && found!=NULL){
-			namepathset(found->name,rename);
-			return found->node;
-		}return NONODE;
-	}
+	
 }*/
 nodei dirmod(void *fsptr, nodei dir, const char *name, nodei node, const char *rename)
 {

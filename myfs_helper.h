@@ -74,10 +74,9 @@
 #include <errno.h>
 #include <stdio.h>
 
-#define O2P(off)	(void*)((off)+fsptr)
 #define P2O(ptr)	(offset)((ptr)-fsptr)
+#define O2P(off)	(void*)((off)+fsptr)
 #define B2P(blk)	(void*)((blk)*BLKSZ+fsptr)
-#define P2B(ptr)	(blkset)(((ptr)-fsptr)/BLKSZ)
 #define MIN(A,B)	((A<=B)?(A):(B))
 #define CLDIV(A,B)	((A+B-1)/B)
 
