@@ -227,7 +227,7 @@
 	Directory layout
 		{ file0[node,name] file1[node,name] ... } ... { file_n[node,name] file_n+1[node,name] ... }
 	
-	Block sizes were chosen to be 1024 bytes, as this is a common block size, is smaller than the page size, and is 		big enough to contain most small files
+	Block sizes were chosen to be 1024 bytes, as this is a common block size, is smaller than the page size, and is big enough to contain most small files
 	Names are given a fixed length to reduce complexity, and the length is such that a directory entry is 256 bytes
 		when/if a longer name is given, the name will be truncated to the fixed length
 	The number of Inodes allocated to the filesystem is calculated so there are at least as many nodes as there
@@ -692,19 +692,18 @@ int __myfs_open_implem(void *fsptr, size_t fssize, int *errnoptr, const char *pa
 */
 int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
                        const char *path, char *buf, size_t size, off_t off) {
-	struct timespec access;
-	timespec_get(&access,TIME_UTC);
-	nodetbl[node].atime=access;
+
+
+
    fsheader *fshead=fsptr;
    inode *nodetbl;
    nodei node;
    fpos pos;
    size_t readct=0, nblks;
+   struct timespec access;
    
-   if(fsinit(fsptr,fssize)==-1){
-      *errnoptr=EFAULT;
-      return -1;
-   }nodetbl=(inode*)O2P(fshead->nodetbl);
+   fsinit(fsptr,fssize);
+   nodetbl=(inode*)O2P(fshead->nodetbl);
    
    if((node=path2node(fsptr,path,NULL))==NONODE){
       *errnoptr=ENOENT;
@@ -714,12 +713,17 @@ int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
       return -1;
    }if(size==0) return 0;
 
+   timespec_get(&access,TIME_UTC);
+   nodetbl[node].atime=access;
+   
+   loadpos(fsptr,&pos,node);
+   seek(fsptr,&pos,off);
    while(pos.data!=NULLOFF && readct<size){
       char* blk=B2P(pos.dblk);
       buf[readct++]=blk[pos.dpos];
       seek(fsptr,&pos,1);
-   }printf("%ld bytes to go\n",size-writect);
-   while(react<size){
+   }
+   while(readct<size){
       loadpos(fsptr,&pos,node);
       seek(fsptr,&pos,off+readct);
       char* blk=B2P(pos.dblk);
@@ -728,8 +732,7 @@ int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
    }
 
 
-   loadpos(fsptr,&pos,node);
-   seek(fsptr,&pos,off);
+
 
    return readct;
 
