@@ -3,19 +3,18 @@ CFLAGS=-Wall `pkg-config fuse --cflags --libs`
 DFLAGS=-g -O0
 BDIR=./build
 
-#default: myfs.c implementation.c
-#	gcc -Wall myfs.c implementation.c `pkg-config fuse --cflags --libs` -o myfs
-#debug: myfs.c implementation.c
-#	gcc -g -O0 -Wall myfs.c implementation.c `pkg-config fuse --cflags --libs` -o myfs
 .PHONY: default debug test clean
 
+#build fuse version
 default: myfs.c $(BDIR)/implementation.o $(BDIR)/myfs_helper.o
 	$(CC) -o $(BDIR)/myfs $^ $(CFLAGS)
 
+#build fuse version for debugging
 debug: CFLAGS+=$(DFLAGS)
 debug: myfs.c $(BDIR)/implementation.o $(BDIR)/myfs_helper.o
 	$(CC) -o $(BDIR)/myfs $^ $(CFLAGS)
 
+#build test version
 test: fstst.c $(BDIR)/myfs_helper.o
 	$(CC) -o $(BDIR)/fstst $^ $(CFLAGS)
 
