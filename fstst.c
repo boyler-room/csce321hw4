@@ -44,6 +44,188 @@
 
 #include "myfs_helper.h"
 
+
+
+// functions im working on
+int __myfs_read_implem(void *fsptr, size_t fssize, int *errnoptr,
+                       const char *path, char *buf, size_t size, off_t off) {
+	fsheader *fshead=fsptr;
+	inode *nodetbl;
+	nodei node;
+	fpos pos;
+	size_t readct=0, nblks;
+	
+	if(fsinit(fsptr,fssize)==-1){
+		*errnoptr=EFAULT;
+		return -1;
+	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	printf("READ CALL\n");
+	printfs(fsptr);
+	
+	if((node=path2node(fsptr,path,NULL))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}if(nodetbl[node].mode!=FILEMODE){
+		*errnoptr=EISDIR;
+		return -1;
+	}if(size==0) return 0;
+
+	 if(off>=nodetbl[node].size){ 
+	// 	size_t offsize=MIN((off+BLKSZ-1)*BLKSZ,(off+size));
+	 	printf("off >= node.size");
+	 }
+	while(pos.data!=NULLOFF && readct<size){
+		printf("...\n");
+		char* blk=B2P(pos.dblk);
+		buf[readct++]=blk[pos.dpos];
+		seek(fsptr,&pos,1);
+	}printf("%ld bytes to go\n",size-writect);
+	while(react<size){
+		if(pos.data==NULLOFF){
+			printf("pos.data == NULLOFF");
+
+		}
+		loadpos(fsptr,&pos,node);
+		seek(fsptr,&pos,off+readct);
+		char* blk=B2P(pos.dblk);
+		buf[readct++]=blk[pos.dpos];
+		seek(fsptr,&pos,1);
+	}
+
+
+	loadpos(fsptr,&pos,node);
+	seek(fsptr,&pos,off);
+
+	printf("name: %s, node: %ld\n",path,node);
+	readct=0;
+	while(readct<size){
+		printf("%c",buf[readct++]);
+	}printf("\n");
+	return readct;
+
+	// while(pos.data!=NULLOFF && readct<size){//TEMPORARY
+	// 	buf[readct++]=((char*)B2P(pos.dblk))[pos.dpos];
+	// 	seek(fsptr,&pos,1);
+	// }return readct;
+
+	/*
+	uh=BLKSZ-pos.dpos, if not start of blk (%BLKSZ?)
+	if(count<=uh) memcpy only count bytes, return count
+	br=(count-uh)/BLKSZ
+	oh=(count-uh)%BLKSZ
+	advance to start of next block
+	while(!eof && <br)
+		if block not full/last block
+			memcpy # in block
+			readct+=#
+			return readct
+		memcpy dblk
+		inc readct
+		dec br
+		advance to next block
+	if eof return readct
+	if last blk/not full && oh>avail
+		oh=avail
+	memcpy oh
+	readct+=oh
+	return readct
+*/
+	//check notdir
+	//loadpos(fsptr,node,&pos);
+	/*if(advance(fsptr,&pos,0,offset)<offset) return -1;
+	while !eof && count<size
+		copy byte to buffer
+		inc count
+		advance
+	return count
+	*/
+  /* STUB */
+  return -1;
+}
+
+
+int __myfs_write_implem(void *fsptr, size_t fssize, int *errnoptr,
+                        const char *path, const char *buf, size_t size, off_t off) {
+	fsheader *fshead=fsptr;
+	inode *nodetbl;
+	nodei node;
+	fpos pos;
+	size_t writect=0, nblks;
+	
+	if(fsinit(fsptr,fssize)==-1){
+		*errnoptr=EFAULT;
+		return -1;
+	}nodetbl=(inode*)O2P(fshead->nodetbl);
+	printf("WRITE CALL: %ld bytes @ offset %ld\n",size,off);
+	printfs(fsptr);
+	
+	if((node=path2node(fsptr,path,NULL))==NONODE){
+		*errnoptr=ENOENT;
+		return -1;
+	}if(size==0) return 0;
+	
+	if(off>=nodetbl[node].size){
+		size_t offsize=MIN(((off+BLKSZ-1)/BLKSZ)*BLKSZ,(off+size));
+		printf("start size: %ld from %ld past %ld\n",offsize,off,nodetbl[node].size);
+		if(frealloc(fsptr,node,MIN(offsize,(off+size)))==-1){
+			*errnoptr=EINVAL;
+			return -1;
+		}
+	}loadpos(fsptr,&pos,node);
+	seek(fsptr,&pos,off);
+	while(pos.data!=NULLOFF && writect<size){
+		printf("...\n");
+		char* blk=B2P(pos.dblk);
+		blk[pos.dpos]=buf[writect++];
+		seek(fsptr,&pos,1);
+	}printf("%ld bytes to go\n",size-writect);
+	while(writect<size){
+		if(pos.data==NULLOFF){
+			size_t extsize=MIN((off+size),(nodetbl[node].nblocks+1)*BLKSZ);
+			printf("extend size: %ld past %ld\n",extsize,nodetbl[node].size);
+			if(frealloc(fsptr,node,extsize)==-1) break;
+		}
+		loadpos(fsptr,&pos,node);
+		seek(fsptr,&pos,off+writect);
+		char* blk=B2P(pos.dblk);
+		blk[pos.dpos]=buf[writect++];
+		seek(fsptr,&pos,1);
+	}printfs(fsptr);
+	/*
+		//calc # blocks past end needed
+		if>0
+			//malloc,blkalloc up to calc'd, save actual alloc'd
+			//for alloc'd blocks
+				copy data to blocks
+				insert blocks into file
+				on fail, free remaining blocks
+	*/
+	//update size
+	printf("name: %s, node: %ld\n",path,node);
+	writect=0;
+	while(writect<size){
+		printf("%c",buf[writect++]);
+	}printf("\n");
+	return writect;
+	/*
+	while(pos.data!=NULLOFF && writect<size){//TEMPORARY
+		printf("write: %c",buf[writect]);
+		
+	}return writect;*/
+  /* STUB */
+  return -1;
+}
+
+
+
+
+
+
+
+
+
+
+
 //debug functions
 
 void printpos(fpos pos)
